@@ -1,6 +1,14 @@
 import type { HymnApi, PackViewError, PackViewOk } from '../shared/ipc'
 import type { PackBook } from '../shared/types'
 import { buildCatalog, formatBookLabel } from '../shared/catalog'
+import { createEffectiveSearchRecorder } from '../shared/effective-search'
+import {
+  emptyHistory,
+  formatRelativeTime,
+  RECENT_OPENED_COUNT,
+  type HistoryData,
+  type OpenEntry,
+} from '../shared/history'
 import { normalizeQuery } from '../shared/normalize'
 import { search } from '../shared/search'
 import { ListView, type ListEntry } from './list-view'
@@ -29,11 +37,30 @@ const listHeading = el<HTMLElement>('list-heading')
 const catalogCount = el<HTMLElement>('catalog-count')
 const listEmpty = el<HTMLElement>('list-empty')
 const listEmptyTitle = el<HTMLElement>('list-empty-title')
+const historyToggle = el<HTMLButtonElement>('history-toggle')
+const historyBody = el<HTMLElement>('history-body')
+const historyClear = el<HTMLButtonElement>('history-clear')
+const searchChips = el<HTMLElement>('search-chips')
+const searchChipsEmpty = el<HTMLElement>('search-chips-empty')
+const openedList = el<HTMLUListElement>('opened-list')
+const openedEmpty = el<HTMLElement>('opened-empty')
+const openedCount = el<HTMLElement>('opened-count')
+const historyMore = el<HTMLButtonElement>('history-more')
 
 let books: PackBook[] = []
 let current: PackBook | null = null
 let searchTimer: number | null = null
 let composing = false
+let currentEntries: ListEntry[] = []
+let appliedSearch: { query: string; count: number } | null = null
+let historyData: HistoryData = emptyHistory()
+let showAllOpened = false
+let confirmingClear = false
+let clearConfirmTimer: number | null = null
+
+const searchRecorder = createEffectiveSearchRecorder((query) => {
+  void persistSearch(query)
+})
 
 const lyrics = new LyricsView({
   empty: el<HTMLElement>('preview-empty'),
@@ -46,12 +73,24 @@ const lyrics = new LyricsView({
 
 const list = new ListView(el<HTMLElement>('hymn-list'), {
   overscan: 6,
-  onOpen: (entry) => showPreview(entry),
+  onOpen: (entry) => openFromList(entry),
 })
 
 function showPreview(entry: ListEntry): void {
   const item = current?.items.find((candidate) => candidate.number === entry.number)
   if (item) lyrics.show(item)
+}
+
+function openFromList(entry: ListEntry): void {
+  if (
+    appliedSearch &&
+    appliedSearch.count > 0 &&
+    normalizeQuery(searchInput.value) === appliedSearch.query
+  ) {
+    searchRecorder.commit(searchInput.value, appliedSearch.count)
+  }
+  showPreview(entry)
+  void persistOpened(entry.number, entry.title)
 }
 
 function resetPreview(): void {
@@ -74,7 +113,10 @@ function scheduleSearch(): void {
 
 function showCatalog(): void {
   if (!current) return
+  searchRecorder.reset()
+  appliedSearch = null
   const entries = buildCatalog(current.items)
+  currentEntries = entries
   list.setEntries(entries)
   listHeading.textContent = '全目录'
   catalogCount.textContent = `共 ${entries.length} 首`
@@ -85,7 +127,8 @@ function showCatalog(): void {
 function runSearch(): void {
   if (!current) return
   const raw = searchInput.value
-  if (!normalizeQuery(raw)) {
+  const normalized = normalizeQuery(raw)
+  if (!normalized) {
     showCatalog()
     return
   }
@@ -98,6 +141,7 @@ function runSearch(): void {
     kind: result.kind,
   }))
 
+  currentEntries = entries
   list.setEntries(entries, { query: raw, autoSelect: entries.length > 0 })
   listHeading.textContent = '检索结果'
   catalogCount.textContent = `找到 ${entries.length} 首`
@@ -106,6 +150,9 @@ function runSearch(): void {
   listEmpty.hidden = !empty
   if (empty) listEmptyTitle.textContent = `没有找到「${raw.trim() || raw}」`
   resetPreview()
+
+  appliedSearch = { query: normalized, count: entries.length }
+  searchRecorder.update(raw, entries.length)
 }
 
 function clearSearch(): void {
@@ -113,6 +160,177 @@ function clearSearch(): void {
   searchInput.value = ''
   showCatalog()
   if (!app.hidden) searchInput.focus()
+}
+
+function applyHistory(next: HistoryData): void {
+  historyData = next
+  renderHistory()
+}
+
+async function loadHistory(): Promise<void> {
+  if (!api) return
+  try {
+    applyHistory(await api.getHistory())
+  } catch (error) {
+    console.warn('[history] 读取历史失败', error)
+  }
+}
+
+async function persistSearch(query: string): Promise<void> {
+  if (!api) return
+  try {
+    applyHistory(await api.addSearch(query))
+  } catch (error) {
+    console.warn('[history] 记录搜索失败', error)
+  }
+}
+
+async function persistOpened(number: number, title: string): Promise<void> {
+  if (!api || !current) return
+  try {
+    applyHistory(await api.addOpened({ book: current.id, number, title }))
+  } catch (error) {
+    console.warn('[history] 记录打开失败', error)
+  }
+}
+
+function revealNumber(number: number): void {
+  const index = currentEntries.findIndex((entry) => entry.number === number)
+  if (index >= 0) list.selectIndex(index)
+}
+
+function openHistory(entry: OpenEntry): void {
+  const book = books.find((candidate) => candidate.id === entry.book)
+  if (!book) return
+
+  if (!current || current.id !== book.id) {
+    selectBook(book, true)
+  } else if (appliedSearch) {
+    cancelScheduledSearch()
+    searchInput.value = ''
+    showCatalog()
+  }
+
+  const item = book.items.find((candidate) => candidate.number === entry.number)
+  if (!item) {
+    console.warn('[history] 历史记录对应的诗歌不在当前数据包中', entry)
+    return
+  }
+
+  revealNumber(item.number)
+  lyrics.show(item)
+  void persistOpened(item.number, item.title)
+}
+
+function renderHistory(): void {
+  renderSearchChips()
+  renderOpened()
+  renderClearButton()
+}
+
+function renderSearchChips(): void {
+  const chips = historyData.searches.map((entry) => {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'history-chip'
+    chip.textContent = entry.q
+    chip.title = `回填搜索「${entry.q}」`
+    chip.addEventListener('click', () => fillSearch(entry.q))
+    return chip
+  })
+
+  searchChips.replaceChildren(...chips)
+  searchChips.hidden = chips.length === 0
+  searchChipsEmpty.hidden = chips.length > 0
+}
+
+function fillSearch(query: string): void {
+  if (app.hidden) return
+  cancelScheduledSearch()
+  searchInput.value = query
+  runSearch()
+  searchInput.focus()
+  searchInput.setSelectionRange(query.length, query.length)
+}
+
+function renderOpened(): void {
+  const now = new Date()
+  const total = historyData.opened.length
+  const visible = showAllOpened
+    ? historyData.opened
+    : historyData.opened.slice(0, RECENT_OPENED_COUNT)
+
+  openedList.replaceChildren(...visible.map((entry) => renderOpenedEntry(entry, now)))
+  openedList.hidden = total === 0
+  openedEmpty.hidden = total > 0
+  openedCount.textContent = total > 0 ? `${total} 条` : ''
+  historyMore.hidden = total <= RECENT_OPENED_COUNT
+  historyMore.textContent = showAllOpened ? '收起' : `展开全部（${total} 条）`
+  historyMore.setAttribute('aria-expanded', String(showAllOpened))
+}
+
+function renderOpenedEntry(entry: OpenEntry, now: Date): HTMLLIElement {
+  const item = document.createElement('li')
+
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'history-item'
+  button.title = `打开第${entry.number}首 ${entry.title}`
+
+  const number = document.createElement('span')
+  number.className = 'history-item-num'
+  number.textContent = `第${entry.number}首`
+
+  const main = document.createElement('span')
+  main.className = 'history-item-main'
+
+  const title = document.createElement('span')
+  title.className = 'history-item-title'
+  title.textContent = entry.title || `第${entry.number}首`
+
+  const meta = document.createElement('span')
+  meta.className = 'history-item-meta'
+  const relative = formatRelativeTime(entry.at, now)
+  meta.textContent =
+    entry.book === current?.id ? relative : `${bookShortLabel(entry.book)} · ${relative}`
+
+  main.append(title, meta)
+  button.append(number, main)
+  button.addEventListener('click', () => openHistory(entry))
+  item.append(button)
+  return item
+}
+
+function bookShortLabel(id: string): string {
+  const book = books.find((candidate) => candidate.id === id)
+  if (!book) return id
+  return (book.alias.split('/')[0] ?? '').trim() || book.name
+}
+
+function renderClearButton(): void {
+  const empty = historyData.searches.length === 0 && historyData.opened.length === 0
+  historyClear.disabled = empty
+  historyClear.textContent = confirmingClear ? '确认清空？' : '清空历史'
+  historyClear.classList.toggle('danger', confirmingClear)
+}
+
+function resetClearConfirm(): void {
+  if (clearConfirmTimer !== null) {
+    window.clearTimeout(clearConfirmTimer)
+    clearConfirmTimer = null
+  }
+  confirmingClear = false
+  renderClearButton()
+}
+
+async function clearHistoryNow(): Promise<void> {
+  if (!api) return
+  try {
+    showAllOpened = false
+    applyHistory(await api.clearHistory())
+  } catch (error) {
+    console.warn('[history] 清空历史失败', error)
+  }
 }
 
 function showApp(pack: PackViewOk, currentBookId: string | null): void {
@@ -296,6 +514,40 @@ document.addEventListener('keydown', (event) => {
   }
 })
 
+historyToggle.addEventListener('click', () => {
+  const nextExpanded = historyBody.hidden
+  historyBody.hidden = !nextExpanded
+  historyToggle.setAttribute('aria-expanded', String(nextExpanded))
+})
+
+historyClear.addEventListener('click', () => {
+  if (historyClear.disabled) return
+
+  if (!confirmingClear) {
+    confirmingClear = true
+    if (clearConfirmTimer !== null) window.clearTimeout(clearConfirmTimer)
+    clearConfirmTimer = window.setTimeout(() => {
+      clearConfirmTimer = null
+      confirmingClear = false
+      renderClearButton()
+    }, 4000)
+    renderClearButton()
+    return
+  }
+
+  resetClearConfirm()
+  void clearHistoryNow()
+})
+
+historyMore.addEventListener('click', () => {
+  showAllOpened = !showAllOpened
+  renderOpened()
+})
+
+window.setInterval(() => {
+  if (!app.hidden) renderOpened()
+}, 60_000)
+
 guideRetry.addEventListener('click', () => {
   void recheck()
 })
@@ -336,6 +588,8 @@ async function init(): Promise<void> {
       error: `启动读取失败：${error instanceof Error ? error.message : String(error)}`,
     })
   }
+  void loadHistory()
 }
 
+renderHistory()
 void init()
