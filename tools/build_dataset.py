@@ -21,11 +21,18 @@ META = re.compile(r"^(歌手|专辑|词|曲|作词|作曲|演唱|编曲|制作|�
 SCRIPTURE = re.compile(r"^诗\s*\d{1,3}\s*[:：]\s*\d")  # 「词：诗34：1-14」这类经文引用行
 JUNK = re.compile(
     r"(www\.|https?://|LRC制作|lrc制作|Lrc编辑|Lrc是|制作[:：]|"
-    r"^专辑[:：]|^第?\s*\d{1,4}\s*[_．.、\-]|^第?\s*\d{1,4}\s*首.*$|"
+    r"^专辑[:：]|^第?\s*\d{1,4}\s*首.*$|"
     r"^《.*》$|制作$|歌词[:：]|^[\s\-—_=*~·。]*$)"
 )
-# 段号前缀：形如「1」「169下」「404」后跟可选分隔符，仅当等于本首编号时才剥（避免误伤正文）
-SELF_NUM = re.compile(r"^(\d{1,4})(?:上|下)?[_\s．.、]*")
+# 段号前缀：形如「169下_举起双手来赞美」「445奉献」「404慈悲救主」——是**诗歌编号**前缀，不是分段标记。
+# 只在该行看起来不是分段标记时才剥，否则会把「1.圣哉…」这类第 1 段标记误吃（红线用例）。
+SELF_NUM = re.compile(r"^(\d{1,4})(?:上|下)?[_　 ]*")
+
+
+def _is_verse_marker(line: str) -> bool:
+    """行首 1–20 的小数字 + 分隔符/空格 = 分段标记，必须保留给 split_verses。"""
+    m = re.match(r"^(\d{1,2})(?:[.．、:：]|\s+\S)", line)
+    return bool(m) and 1 <= int(m.group(1)) <= 20
 
 
 def clean_lines(lrc: str, expected_number: int | None = None):
@@ -34,22 +41,34 @@ def clean_lines(lrc: str, expected_number: int | None = None):
         line = raw.replace("\ufeff", "").strip()  # 先 strip（含 BOM）：否则 ^ 锚点失配
         while TS.match(line):  # 一行可能有多个时间轴，逐个剥
             line = TS.sub("", line, count=1).replace("\ufeff", "").strip()
-        if expected_number is not None:
+        if expected_number is not None and not _is_verse_marker(line):
             m = SELF_NUM.match(line)
             if m and int(m.group(1)) == expected_number:
                 rest = line[m.end():].strip()
                 if rest:
                     line = rest
-        if not line or META.match(line) or SCRIPTURE.match(line) or JUNK.search(line):
+        if not line:
+            out.append(None)  # 空行保留为段落分隔信号
+            continue
+        if META.match(line) or SCRIPTURE.match(line) or JUNK.search(line):
             continue
         out.append(line)
     return out
 
 
 def split_verses(lines):
-    """按 '1.' / '1 ' 之类段号标记切段；无标记则整首为一段。"""
+    """切段：优先用 '1.' '1 ' 等段号标记；没有标记时用 None 作为段落分隔（空行信号）。
+
+    1218 的源站歌词没有段号，但用空行分段（1272 首中 987 首有 ≥3 个空行），
+    因此 clean_lines 保留 None 表示空行，这里据此切段。
+    """
     verses, cur, label = [], None, ""
     for line in lines:
+        if line is None:  # 空行 = 段落分隔
+            if cur:
+                verses.append({"label": label, "lines": cur})
+            cur, label = None, ""
+            continue
         m = re.match(r"^(\d{1,2})\s*[.．、:：]?\s+(\S.*)$", line) or \
             re.match(r"^(\d{1,2})[.．、:：](\S.*)$", line)
         if m and 1 <= int(m.group(1)) <= 20:

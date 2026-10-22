@@ -52,6 +52,11 @@ def main() -> int:
         if nums != sorted(nums):
             fail(f"{bid}: 编号未升序")
 
+        # 段落结构：投屏分页依赖它；两本都应有多段条目（实测红本 285/400、千首本 1087/1193）
+        multi = sum(1 for i in items if len(i.get("verses") or []) > 1)
+        if with_v and multi / with_v < 0.5:
+            fail(f"{bid}: 多段条目仅 {multi}/{with_v}，段落结构疑似损坏（投屏无法分页）")
+
         time_hits, lead_hits, junk_hits, empty_lines, meta_hits = [], [], [], 0, []
         for it in items:
             for v in it["verses"]:
