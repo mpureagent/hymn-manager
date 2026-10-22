@@ -303,6 +303,8 @@ function createControlWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 投屏窗口可能全屏盖住主窗，主窗仍要正常跑搜索防抖与历史刷新。
+      backgroundThrottling: false,
     },
   })
 
