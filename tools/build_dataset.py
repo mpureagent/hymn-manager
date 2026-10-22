@@ -16,38 +16,43 @@ import json, os, re, sys, glob, unicodedata
 RAW = os.path.join(os.path.dirname(__file__), "..", ".raw")
 RAW = os.path.abspath(RAW)
 
-TS = re.compile(r"^\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*")
+TS = re.compile(r"^\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]?")  # 闭合括号容忍缺失（源站有残行）
+META = re.compile(r"^(歌手|专辑|词|曲|作词|作曲|演唱|编曲|制作|出品|LRC)\s*[:：]")
+SCRIPTURE = re.compile(r"^诗\s*\d{1,3}\s*[:：]\s*\d")  # 「词：诗34：1-14」这类经文引用行
 JUNK = re.compile(
     r"(www\.|https?://|LRC制作|lrc制作|Lrc编辑|Lrc是|制作[:：]|"
     r"^专辑[:：]|^第?\s*\d{1,4}\s*[_．.、\-]|^第?\s*\d{1,4}\s*首.*$|"
     r"^《.*》$|制作$|歌词[:：]|^[\s\-—_=*~·。]*$)"
 )
+# 段号前缀：形如「1」「169下」「404」后跟可选分隔符，仅当等于本首编号时才剥（避免误伤正文）
+SELF_NUM = re.compile(r"^(\d{1,4})(?:上|下)?[_\s．.、]*")
 
 
-def norm(s: str) -> str:
-    """标题归一化：全半角、去括号内容、去「歌」尾、去空白标点。"""
-    s = unicodedata.normalize("NFKC", s)
-    s = re.sub(r"[（(][^)）]*[)）]", "", s)
-    s = re.sub(r"[\s·・.,，。、!！?？:：;；'\"“”‘’\-—_/\\|]", "", s)
-    return s.strip()
-
-
-def clean_lines(lrc: str):
+def clean_lines(lrc: str, expected_number: int | None = None):
     out = []
     for raw in lrc.split("\n"):
-        line = TS.sub("", raw).strip()
-        if not line or JUNK.search(line):
+        line = raw.replace("\ufeff", "").strip()  # 先 strip（含 BOM）：否则 ^ 锚点失配
+        while TS.match(line):  # 一行可能有多个时间轴，逐个剥
+            line = TS.sub("", line, count=1).replace("\ufeff", "").strip()
+        if expected_number is not None:
+            m = SELF_NUM.match(line)
+            if m and int(m.group(1)) == expected_number:
+                rest = line[m.end():].strip()
+                if rest:
+                    line = rest
+        if not line or META.match(line) or SCRIPTURE.match(line) or JUNK.search(line):
             continue
         out.append(line)
     return out
 
 
 def split_verses(lines):
-    """按 '1.' '2.' 之类标记切段；无标记则整首为一段。"""
+    """按 '1.' / '1 ' 之类段号标记切段；无标记则整首为一段。"""
     verses, cur, label = [], None, ""
     for line in lines:
-        m = re.match(r"^(\d{1,2})\s*[.．、]\s*(.*)$", line)
-        if m:
+        m = re.match(r"^(\d{1,2})\s*[.．、:：]?\s+(\S.*)$", line) or \
+            re.match(r"^(\d{1,2})[.．、:：](\S.*)$", line)
+        if m and 1 <= int(m.group(1)) <= 20:
             if cur:
                 verses.append({"label": label, "lines": cur})
             label, cur = m.group(1), [m.group(2).strip()] if m.group(2).strip() else []
@@ -60,6 +65,14 @@ def split_verses(lines):
     return [v for v in verses if any(x.strip() for x in v["lines"])]
 
 
+def norm(s: str) -> str:
+    """标题归一化：全半角、去括号内容、去「歌」尾、去空白标点。"""
+    s = unicodedata.normalize("NFKC", s)
+    s = re.sub(r"[（(][^)）]*[)）]", "", s)
+    s = re.sub(r"[\s·・.,，。、!！?？:：;；'\"“”‘’\-—_/\\|]", "", s)
+    return s.strip()
+
+
 def build_red():
     idx = {i["number"]: i["title"] for i in json.load(open(f"{RAW}/442_index.json"))["items"]}
     items, missing = [], []
@@ -69,7 +82,7 @@ def build_red():
         num, _, title = base.partition("_")
         num = int(num)
         lrc = open(fp, encoding="utf-8", errors="ignore").read()
-        lines = clean_lines(lrc)
+        lines = clean_lines(lrc, num)
         verses = split_verses(lines)
         items.append({
             "book": "red_book",
@@ -144,7 +157,7 @@ def build_1218():
             "title": idx[num],
             "title_alt": rec["title"],
             "same_title": same,
-            "verses": split_verses(clean_lines(rec["lrc"])),
+            "verses": split_verses(clean_lines(rec["lrc"], num)),
             "source": f"j51:song/{rec['id']}",
         }
     items = [best[n] for n in sorted(best)]
