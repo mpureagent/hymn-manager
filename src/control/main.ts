@@ -4,6 +4,7 @@ import { buildCatalog, formatBookLabel } from '../shared/catalog'
 import { normalizeQuery } from '../shared/normalize'
 import { search } from '../shared/search'
 import { ListView, type ListEntry } from './list-view'
+import { LyricsView } from './lyrics-view'
 
 const SEARCH_DEBOUNCE_MS = 120
 
@@ -28,15 +29,20 @@ const listHeading = el<HTMLElement>('list-heading')
 const catalogCount = el<HTMLElement>('catalog-count')
 const listEmpty = el<HTMLElement>('list-empty')
 const listEmptyTitle = el<HTMLElement>('list-empty-title')
-const previewEmpty = el<HTMLElement>('preview-empty')
-const previewSelected = el<HTMLElement>('preview-selected')
-const previewEyebrow = el<HTMLElement>('preview-eyebrow')
-const previewTitle = el<HTMLElement>('preview-title')
 
 let books: PackBook[] = []
 let current: PackBook | null = null
 let searchTimer: number | null = null
 let composing = false
+
+const lyrics = new LyricsView({
+  empty: el<HTMLElement>('preview-empty'),
+  panel: el<HTMLElement>('preview-panel'),
+  eyebrow: el<HTMLElement>('preview-eyebrow'),
+  title: el<HTMLElement>('preview-title'),
+  alt: el<HTMLElement>('preview-alt'),
+  body: el<HTMLElement>('lyrics-body'),
+})
 
 const list = new ListView(el<HTMLElement>('hymn-list'), {
   overscan: 6,
@@ -44,15 +50,12 @@ const list = new ListView(el<HTMLElement>('hymn-list'), {
 })
 
 function showPreview(entry: ListEntry): void {
-  previewEmpty.hidden = true
-  previewSelected.hidden = false
-  previewEyebrow.textContent = `第 ${entry.number} 首`
-  previewTitle.textContent = entry.title
+  const item = current?.items.find((candidate) => candidate.number === entry.number)
+  if (item) lyrics.show(item)
 }
 
 function resetPreview(): void {
-  previewSelected.hidden = true
-  previewEmpty.hidden = false
+  lyrics.clear()
 }
 
 function cancelScheduledSearch(): void {

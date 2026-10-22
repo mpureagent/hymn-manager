@@ -303,18 +303,35 @@
 
       .preview-pane {
         display: flex;
-        align-items: center;
+        align-items: stretch;
         justify-content: center;
         min-width: 0;
-        padding: 48px;
+        overflow: hidden;
         background:
-          radial-gradient(circle at 50% 38%, #fbf8f1 0, var(--bg) 62%);
+          radial-gradient(circle at 50% 30%, #fbf8f1 0, var(--bg) 70%);
       }
 
-      .preview-empty,
-      .preview-selected {
+      .preview-empty {
+        align-self: center;
         max-width: 520px;
+        padding: 48px;
         text-align: center;
+      }
+
+      .preview-panel {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        width: 100%;
+        max-width: 880px;
+        min-height: 0;
+        padding: 36px 56px 0;
+      }
+
+      .preview-head {
+        flex: 0 0 auto;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--line-soft);
       }
 
       .preview-mark {
@@ -332,8 +349,7 @@
         font-size: 26px;
       }
 
-      .preview-empty p,
-      .preview-selected p {
+      .preview-empty p {
         margin: 0;
       }
 
@@ -350,17 +366,88 @@
       }
 
       .preview-eyebrow {
+        margin: 0;
         color: var(--accent);
         font-size: 12px;
         letter-spacing: 0.18em;
       }
 
       .preview-title {
-        margin: 14px 0 0;
+        margin: 12px 0 0;
         font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
         font-size: 30px;
         font-weight: 600;
         letter-spacing: 0.06em;
+      }
+
+      .preview-alt {
+        margin: 8px 0 0;
+        color: var(--faint);
+        font-size: 14px;
+        letter-spacing: 0.04em;
+      }
+
+      .lyrics-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 22px 0 56px;
+        overflow-y: auto;
+        outline: none;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+      }
+
+      .lyrics-body:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 4px;
+      }
+
+      .lyric-verse + .lyric-verse {
+        margin-top: 24px;
+      }
+
+      .verse-label {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--faint);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+      }
+
+      .lyric-line {
+        margin: 0;
+        font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+        font-size: 18px;
+        line-height: 1.6;
+        letter-spacing: 0.035em;
+      }
+
+      .lyrics-missing {
+        padding: 6px 0;
+      }
+
+      .lyrics-missing-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+
+      .lyrics-missing-hint {
+        margin: 10px 0 18px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .lyrics-missing-action {
+        height: 36px;
+        padding: 0 16px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface-soft);
+        color: var(--faint);
+        font: inherit;
+        cursor: not-allowed;
       }
 
       /* 数据包引导页 */
@@ -550,13 +637,16 @@
         <div id="preview-empty" class="preview-empty">
           <div class="preview-mark" aria-hidden="true">♪</div>
           <p class="preview-empty-title">选择左侧诗歌</p>
-          <p class="preview-hint">歌词与曲谱将在后续版本显示</p>
+          <p class="preview-hint">输入编号或歌名，或从目录中选择一首</p>
         </div>
-        <div id="preview-selected" class="preview-selected" hidden>
-          <p id="preview-eyebrow" class="preview-eyebrow"></p>
-          <h2 id="preview-title" class="preview-title"></h2>
-          <p class="preview-hint">歌词预览将在后续版本显示</p>
-        </div>
+        <article id="preview-panel" class="preview-panel" hidden aria-labelledby="preview-title">
+          <header class="preview-head">
+            <p id="preview-eyebrow" class="preview-eyebrow"></p>
+            <h2 id="preview-title" class="preview-title"></h2>
+            <p id="preview-alt" class="preview-alt" hidden></p>
+          </header>
+          <div id="lyrics-body" class="lyrics-body" tabindex="0" aria-label="歌词"></div>
+        </article>
       </section>
     </main>
 
