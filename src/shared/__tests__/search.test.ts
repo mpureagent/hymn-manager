@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { search } from '../src/shared/search'
-import type { HymnItem } from '../src/shared/types'
+import { search } from '../search'
+import type { HymnItem } from '../types'
 
 const RED: HymnItem[] = [
   {

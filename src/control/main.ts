@@ -1,7 +1,11 @@
 import type { HymnApi, PackViewError, PackViewOk } from '../shared/ipc'
 import type { PackBook } from '../shared/types'
-import { buildCatalog, formatBookLabel, type CatalogEntry } from '../shared/catalog'
-import { VirtualList } from './virtual-list'
+import { buildCatalog, formatBookLabel } from '../shared/catalog'
+import { normalizeQuery } from '../shared/normalize'
+import { search } from '../shared/search'
+import { ListView, type ListEntry } from './list-view'
+
+const SEARCH_DEBOUNCE_MS = 120
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -20,7 +24,10 @@ const guideError = el<HTMLElement>('guide-error')
 const guideRetry = el<HTMLButtonElement>('guide-retry')
 const bookSelect = el<HTMLSelectElement>('book-select')
 const searchInput = el<HTMLInputElement>('search-input')
+const listHeading = el<HTMLElement>('list-heading')
 const catalogCount = el<HTMLElement>('catalog-count')
+const listEmpty = el<HTMLElement>('list-empty')
+const listEmptyTitle = el<HTMLElement>('list-empty-title')
 const previewEmpty = el<HTMLElement>('preview-empty')
 const previewSelected = el<HTMLElement>('preview-selected')
 const previewEyebrow = el<HTMLElement>('preview-eyebrow')
@@ -28,14 +35,15 @@ const previewTitle = el<HTMLElement>('preview-title')
 
 let books: PackBook[] = []
 let current: PackBook | null = null
+let searchTimer: number | null = null
+let composing = false
 
-const list = new VirtualList(el<HTMLElement>('hymn-list'), {
-  rowHeight: 44,
+const list = new ListView(el<HTMLElement>('hymn-list'), {
   overscan: 6,
-  onSelect: showPreview,
+  onOpen: (entry) => showPreview(entry),
 })
 
-function showPreview(entry: CatalogEntry): void {
+function showPreview(entry: ListEntry): void {
   previewEmpty.hidden = true
   previewSelected.hidden = false
   previewEyebrow.textContent = `第 ${entry.number} 首`
@@ -45,6 +53,63 @@ function showPreview(entry: CatalogEntry): void {
 function resetPreview(): void {
   previewSelected.hidden = true
   previewEmpty.hidden = false
+}
+
+function cancelScheduledSearch(): void {
+  if (searchTimer === null) return
+  window.clearTimeout(searchTimer)
+  searchTimer = null
+}
+
+function scheduleSearch(): void {
+  cancelScheduledSearch()
+  searchTimer = window.setTimeout(() => {
+    searchTimer = null
+    runSearch()
+  }, SEARCH_DEBOUNCE_MS)
+}
+
+function showCatalog(): void {
+  if (!current) return
+  const entries = buildCatalog(current.items)
+  list.setEntries(entries)
+  listHeading.textContent = '全目录'
+  catalogCount.textContent = `共 ${entries.length} 首`
+  listEmpty.hidden = true
+  resetPreview()
+}
+
+function runSearch(): void {
+  if (!current) return
+  const raw = searchInput.value
+  if (!normalizeQuery(raw)) {
+    showCatalog()
+    return
+  }
+
+  const results = search(current.items, raw)
+  const entries: ListEntry[] = results.map((result) => ({
+    number: result.item.number,
+    title: result.item.title,
+    excerpt: result.excerpt,
+    kind: result.kind,
+  }))
+
+  list.setEntries(entries, { query: raw, autoSelect: entries.length > 0 })
+  listHeading.textContent = '检索结果'
+  catalogCount.textContent = `找到 ${entries.length} 首`
+
+  const empty = entries.length === 0
+  listEmpty.hidden = !empty
+  if (empty) listEmptyTitle.textContent = `没有找到「${raw.trim() || raw}」`
+  resetPreview()
+}
+
+function clearSearch(): void {
+  cancelScheduledSearch()
+  searchInput.value = ''
+  showCatalog()
+  if (!app.hidden) searchInput.focus()
 }
 
 function showApp(pack: PackViewOk, currentBookId: string | null): void {
@@ -68,13 +133,12 @@ function showApp(pack: PackViewOk, currentBookId: string | null): void {
 }
 
 function selectBook(book: PackBook, persist: boolean): void {
+  cancelScheduledSearch()
+  composing = false
   current = book
   bookSelect.value = book.id
   searchInput.value = ''
-  const entries = buildCatalog(book.items)
-  list.setItems(entries)
-  catalogCount.textContent = `共 ${entries.length} 首`
-  resetPreview()
+  showCatalog()
   if (persist) {
     void api?.setCurrentBook(book.id).catch((error: unknown) => {
       console.warn('[settings] 保存选本失败', error)
@@ -83,6 +147,7 @@ function selectBook(book: PackBook, persist: boolean): void {
 }
 
 function showGuide(pack: PackViewError): void {
+  cancelScheduledSearch()
   app.hidden = true
   guide.hidden = false
   searchInput.disabled = true
@@ -138,36 +203,93 @@ bookSelect.addEventListener('change', () => {
   if (book) selectBook(book, true)
 })
 
+searchInput.addEventListener('compositionstart', () => {
+  composing = true
+  cancelScheduledSearch()
+})
+
+searchInput.addEventListener('compositionend', () => {
+  composing = false
+  scheduleSearch()
+})
+
+searchInput.addEventListener('input', (event) => {
+  if (composing || (event instanceof InputEvent && event.isComposing)) return
+  scheduleSearch()
+})
+
 searchInput.addEventListener('keydown', (event) => {
+  if (event.isComposing || composing) return
+
   if (event.key === 'Escape') {
     event.preventDefault()
-    searchInput.value = ''
+    clearSearch()
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    list.moveSelection(1)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    list.moveSelection(-1)
+    return
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    list.openSelected()
   }
 })
 
 document.addEventListener('keydown', (event) => {
+  if (event.isComposing || composing) return
+
   const target = event.target
   const typing =
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement
 
-  if (event.key === 'Escape' && searchInput.value !== '') {
+  if (!app.hidden && event.key === 'Escape' && searchInput.value !== '') {
     event.preventDefault()
-    searchInput.value = ''
+    clearSearch()
     return
   }
 
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+  if (!app.hidden && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
     event.preventDefault()
     searchInput.focus()
     searchInput.select()
     return
   }
 
-  if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+  if (
+    !app.hidden &&
+    event.key === '/' &&
+    !typing &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
     event.preventDefault()
     searchInput.focus()
+    searchInput.select()
+    return
+  }
+
+  if (app.hidden || typing) return
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    list.moveSelection(event.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+
+  if (event.key === 'Enter') {
+    if (target instanceof Element && target.closest('.hymn-row')) return
+    event.preventDefault()
+    list.openSelected()
   }
 })
 

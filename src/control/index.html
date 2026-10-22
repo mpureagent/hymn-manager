@@ -147,6 +147,13 @@
         color: var(--ink);
       }
 
+      .list-stage {
+        position: relative;
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+
       .list-viewport {
         position: relative;
         flex: 1 1 auto;
@@ -155,6 +162,33 @@
         overflow-x: hidden;
         outline: none;
         overscroll-behavior: contain;
+      }
+
+      .list-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 28px;
+        background: var(--surface);
+        text-align: center;
+      }
+
+      .list-empty-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .list-empty-hint {
+        margin: 0;
+        color: var(--faint);
+        font-size: 12.5px;
+        line-height: 1.7;
       }
 
       .vl-spacer {
@@ -177,7 +211,8 @@
         align-items: center;
         gap: 12px;
         width: 100%;
-        padding: 0 18px;
+        padding: 0 16px 0 18px;
+        overflow: hidden;
         border: 0;
         border-bottom: 1px solid var(--line-soft);
         background: transparent;
@@ -202,20 +237,68 @@
       }
 
       .hymn-row-num {
-        flex: 0 0 76px;
-        overflow: hidden;
+        flex: 0 0 auto;
+        min-width: 52px;
+        padding: 2px 8px;
+        border: 1px solid var(--line-soft);
+        border-radius: 999px;
+        background: var(--surface-soft);
         color: var(--muted);
-        font-size: 12px;
+        font-size: 11.5px;
         font-variant-numeric: tabular-nums;
+        text-align: center;
         white-space: nowrap;
       }
 
-      .hymn-row-title {
+      .hymn-row-main {
+        display: flex;
         flex: 1 1 auto;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .hymn-row-title-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .hymn-row-title {
+        flex: 0 1 auto;
         overflow: hidden;
         font-size: 15px;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .hymn-row-tag {
+        flex: 0 0 auto;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+      }
+
+      .hymn-row-excerpt {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.4;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      mark {
+        padding: 0 1px;
+        border-radius: 2px;
+        background: #f1d69a;
+        color: inherit;
       }
 
       .preview-pane {
@@ -452,10 +535,16 @@
     <main id="app" class="layout" hidden>
       <section class="list-pane">
         <div class="pane-head">
-          <strong>全目录</strong>
-          <span id="catalog-count"></span>
+          <strong id="list-heading">全目录</strong>
+          <span id="catalog-count" aria-live="polite"></span>
         </div>
-        <div id="hymn-list" class="list-viewport" role="listbox" aria-label="诗歌目录"></div>
+        <div class="list-stage">
+          <div id="hymn-list" class="list-viewport" role="listbox" aria-label="诗歌目录"></div>
+          <div id="list-empty" class="list-empty" hidden>
+            <p id="list-empty-title" class="list-empty-title"></p>
+            <p class="list-empty-hint">试试输入编号，或只输入标题中的两三个字</p>
+          </div>
+        </div>
       </section>
       <section class="preview-pane">
         <div id="preview-empty" class="preview-empty">

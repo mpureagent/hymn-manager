@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findMatchRange, normalizeQuery, normalizeText } from '../src/shared/normalize'
+import { findMatchRange, normalizeQuery, normalizeText } from '../normalize'
 
 describe('normalize', () => {
   it('NFKC 统一全角/半角并转小写', () => {
