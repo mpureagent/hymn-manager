@@ -53,6 +53,28 @@
         padding: 6vh 6vw 10vh;
       }
 
+      /* 曲谱投射：整图适应，不需要歌词页码的底部安全区 */
+      body.score-mode .stage {
+        padding: 3vh 3vw;
+      }
+
+      .score {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+      }
+
+      .score-image {
+        display: block;
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
+
       .page {
         width: 100%;
         max-width: 92vw;
@@ -184,6 +206,9 @@
     <main id="stage" class="stage" aria-live="polite">
       <section id="page" class="page" hidden>
         <div id="lines" class="lines"></div>
+      </section>
+      <section id="score" class="score" hidden>
+        <img id="score-image" class="score-image" alt="" draggable="false" />
       </section>
       <p id="empty" class="empty" hidden>等待主窗口投屏</p>
     </main>

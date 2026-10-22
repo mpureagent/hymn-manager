@@ -15,6 +15,7 @@ const CH = {
   historyClear: 'history:clear',
   fontsList: 'fonts:list',
   styleSet: 'style:set',
+  scorePath: 'score:path',
   projectionToggle: 'projection:toggle',
   projectionUpdate: 'projection:update',
   projectionSetStyle: 'projection:set-style',
@@ -34,6 +35,8 @@ const api: HymnApi = {
   clearHistory: () => ipcRenderer.invoke(CH.historyClear) as Promise<HistoryData>,
   listFonts: () => ipcRenderer.invoke(CH.fontsList) as Promise<FontChoice[]>,
   setStyle: (style: HymnStyle) => ipcRenderer.invoke(CH.styleSet, style) as Promise<HymnStyle>,
+  getScorePath: (book: string, number: number) =>
+    ipcRenderer.invoke(CH.scorePath, book, number) as Promise<string | null>,
   toggleProjection: (content: ProjectionContent | null) =>
     ipcRenderer.invoke(CH.projectionToggle, content),
   updateProjection: (content: ProjectionContent) => ipcRenderer.send(CH.projectionUpdate, content),

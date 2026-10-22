@@ -13,6 +13,7 @@ export const IPC = {
   historyClear: 'history:clear',
   fontsList: 'fonts:list',
   styleSet: 'style:set',
+  scorePath: 'score:path',
   projectionToggle: 'projection:toggle',
   projectionUpdate: 'projection:update',
   projectionSetStyle: 'projection:set-style',
@@ -70,6 +71,8 @@ export interface HymnApi {
   clearHistory(): Promise<HistoryData>
   listFonts(): Promise<FontChoice[]>
   setStyle(style: HymnStyle): Promise<HymnStyle>
+  /** 曲谱绝对路径；无图或参数非法返回 null（不读文件内容）。 */
+  getScorePath(book: string, number: number): Promise<string | null>
   toggleProjection(content: ProjectionContent | null): Promise<ProjectionToggleResult>
   updateProjection(content: ProjectionContent): void
   setProjectionStyle(style: HymnStyle): void

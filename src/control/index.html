@@ -644,6 +644,57 @@
         letter-spacing: 0.04em;
       }
 
+      .preview-tabs {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 2px;
+        padding-top: 8px;
+        border-bottom: 1px solid var(--hymn-rule);
+      }
+
+      .preview-tab {
+        position: relative;
+        padding: 9px 18px 11px;
+        border: 0;
+        background: transparent;
+        color: var(--hymn-ink-soft);
+        font: inherit;
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+      }
+
+      .preview-tab:hover {
+        color: var(--hymn-ink);
+      }
+
+      .preview-tab[aria-selected="true"] {
+        color: var(--hymn-ink);
+        font-weight: 600;
+      }
+
+      .preview-tab[aria-selected="true"]::after {
+        content: "";
+        position: absolute;
+        right: 12px;
+        bottom: -1px;
+        left: 12px;
+        height: 2px;
+        background: var(--hymn-ink);
+      }
+
+      .preview-tab:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .preview-view {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+      }
+
       .lyrics-body {
         flex: 1 1 auto;
         min-height: 0;
@@ -654,6 +705,127 @@
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
         text-align: var(--hymn-align);
+      }
+
+      /* 曲谱视图：工具条 + 可滚动/可拖拽的图片舞台 */
+      .score-toolbar {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        padding: 10px 0 6px;
+      }
+
+      .score-tool-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 30px;
+        border: 1px solid var(--hymn-rule);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--hymn-ink);
+        font: inherit;
+        font-size: 17px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .score-tool-btn:hover:not(:disabled) {
+        background: var(--hymn-rule);
+      }
+
+      .score-tool-btn:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .score-tool-btn:disabled {
+        color: var(--hymn-ink-soft);
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      .score-zoom-value {
+        min-width: 54px;
+        padding: 0 4px;
+        color: var(--hymn-ink-soft);
+        font-size: 12.5px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        text-align: center;
+      }
+
+      .score-viewport {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        outline: none;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        user-select: none;
+      }
+
+      .score-viewport.pannable {
+        cursor: grab;
+      }
+
+      .score-viewport.dragging {
+        cursor: grabbing;
+      }
+
+      .score-stage {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: max-content;
+        height: max-content;
+        min-width: 100%;
+        min-height: 100%;
+        padding: 12px;
+      }
+
+      .score-image {
+        display: block;
+        flex: 0 0 auto;
+        max-width: none;
+        max-height: none;
+        -webkit-user-drag: none;
+      }
+
+      .score-message {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 32px;
+        background: var(--hymn-bg);
+        text-align: center;
+      }
+
+      .score-message-title {
+        margin: 0;
+        color: var(--hymn-ink);
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+      }
+
+      .score-message-path {
+        max-width: 100%;
+        margin: 0;
+        overflow-wrap: anywhere;
+        color: var(--hymn-ink-soft);
+        font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+        font-size: 11.5px;
+        line-height: 1.6;
+        user-select: text;
       }
 
       .lyrics-body:focus-visible {
@@ -707,9 +879,18 @@
         border: 1px solid var(--hymn-rule);
         border-radius: 7px;
         background: transparent;
-        color: var(--hymn-ink-soft);
+        color: var(--hymn-ink);
         font: inherit;
-        cursor: not-allowed;
+        cursor: pointer;
+      }
+
+      .lyrics-missing-action:hover {
+        background: var(--hymn-rule);
+      }
+
+      .lyrics-missing-action:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
       }
 
       /* 样式抽屉：右侧滑出，遮罩点击关闭 */
@@ -1302,7 +1483,70 @@
             <h2 id="preview-title" class="preview-title"></h2>
             <p id="preview-alt" class="preview-alt" hidden></p>
           </header>
-          <div id="lyrics-body" class="lyrics-body" tabindex="0" aria-label="歌词"></div>
+          <div class="preview-tabs" role="tablist" aria-label="预览视图">
+            <button
+              id="tab-lyrics"
+              class="preview-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="lyrics-view"
+            >
+              歌词
+            </button>
+            <button
+              id="tab-score"
+              class="preview-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="score-view"
+              tabindex="-1"
+            >
+              曲谱
+            </button>
+          </div>
+          <div id="lyrics-view" class="preview-view" role="tabpanel" aria-labelledby="tab-lyrics">
+            <div id="lyrics-body" class="lyrics-body" tabindex="0" aria-label="歌词"></div>
+          </div>
+          <div
+            id="score-view"
+            class="preview-view"
+            role="tabpanel"
+            aria-labelledby="tab-score"
+            hidden
+          >
+            <div class="score-toolbar">
+              <button
+                id="score-zoom-out"
+                class="score-tool-btn"
+                type="button"
+                title="缩小（Ctrl+滚轮）"
+                aria-label="缩小曲谱"
+              >
+                −
+              </button>
+              <span id="score-zoom-value" class="score-zoom-value" aria-live="polite">—</span>
+              <button
+                id="score-zoom-in"
+                class="score-tool-btn"
+                type="button"
+                title="放大（Ctrl+滚轮）"
+                aria-label="放大曲谱"
+              >
+                +
+              </button>
+            </div>
+            <div id="score-viewport" class="score-viewport" tabindex="0" aria-label="曲谱">
+              <div id="score-stage" class="score-stage">
+                <img id="score-image" class="score-image" alt="" draggable="false" hidden />
+              </div>
+              <div id="score-message" class="score-message" hidden>
+                <p id="score-message-title" class="score-message-title"></p>
+                <p id="score-message-path" class="score-message-path" hidden></p>
+              </div>
+            </div>
+          </div>
         </article>
       </section>
     </main>

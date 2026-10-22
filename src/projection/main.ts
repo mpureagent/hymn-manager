@@ -28,6 +28,8 @@ const stage = el<HTMLElement>('stage')
 
 const pageNode = el<HTMLElement>('page')
 const linesNode = el<HTMLElement>('lines')
+const scoreNode = el<HTMLElement>('score')
+const scoreImage = el<HTMLImageElement>('score-image')
 const emptyNode = el<HTMLElement>('empty')
 const indicator = el<HTMLElement>('indicator')
 const controls = el<HTMLElement>('controls')
@@ -43,6 +45,7 @@ let content: ProjectionContent | null = null
 let pages: ProjectionPage[] = []
 let pageIndex = 0
 let effectiveFontSize = 0
+let failedScoreUrl: string | null = null
 let hideTimer: number | null = null
 let resizeFrame: number | null = null
 
@@ -112,6 +115,14 @@ function relayout(): void {
     return
   }
 
+  if (content.view === 'score') {
+    applyStyle(content.style)
+    pages = []
+    render()
+    updateFitHint()
+    return
+  }
+
   updateStagePadding()
 
   const style = content.style
@@ -158,7 +169,8 @@ function renderPageAt(candidate: ProjectionPage[], index: number): void {
 }
 
 function updateFitHint(): void {
-  const shrunk = content !== null && effectiveFontSize < content.style.fontSize
+  const shrunk =
+    content !== null && content.view !== 'score' && effectiveFontSize < content.style.fontSize
   fitHint.hidden = !shrunk
   fitHint.textContent = shrunk ? `字号已自动缩至 ${effectiveFontSize}px 防裁切` : ''
 }
@@ -183,6 +195,24 @@ function setContent(next: ProjectionContent | null): void {
 }
 
 function render(): void {
+  const scoreMode = content !== null && content.view === 'score'
+  document.body.classList.toggle('score-mode', scoreMode)
+
+  if (scoreMode && content) {
+    // 歌词模式会把控制条安全区写成内联 padding-bottom，切曲谱时要让回给 CSS。
+    stage.style.paddingBottom = ''
+    renderScore(content)
+    return
+  }
+
+  scoreNode.hidden = true
+  scoreImage.hidden = true
+  failedScoreUrl = null
+  if (scoreImage.dataset.src) {
+    scoreImage.removeAttribute('src')
+    delete scoreImage.dataset.src
+  }
+
   const page = pages[pageIndex]
   const hasLines = page !== undefined && page.lines.length > 0
 
@@ -221,6 +251,58 @@ function render(): void {
   setEnabled(prevPage, pageIndex > 0)
   setEnabled(nextPage, pageIndex < pages.length - 1)
 }
+
+/** 曲谱整图：不做分页，整图放进屏幕（保留控制条可操作）。 */
+function renderScore(current: ProjectionContent): void {
+  pageNode.hidden = true
+  linesNode.replaceChildren()
+  indicator.hidden = true
+  indicator.textContent = ''
+  controlPage.textContent = '—'
+  setEnabled(prevPage, false)
+  setEnabled(nextPage, false)
+  setEnabled(prevHymn, true)
+  setEnabled(nextHymn, true)
+
+  const url = current.scoreUrl ?? null
+  if (!url) {
+    scoreNode.hidden = true
+    emptyNode.hidden = false
+    emptyNode.textContent = `${current.title} · 本首暂无曲谱`
+    return
+  }
+  if (failedScoreUrl === url) {
+    scoreNode.hidden = true
+    emptyNode.hidden = false
+    emptyNode.textContent = `${current.title} · 曲谱加载失败`
+    return
+  }
+
+  if (scoreImage.dataset.src !== url) {
+    scoreImage.dataset.src = url
+    scoreImage.alt = `${current.title} 曲谱`
+    scoreImage.src = url
+  }
+  scoreNode.hidden = false
+  emptyNode.hidden = true
+}
+
+scoreImage.addEventListener('load', () => {
+  if (!content || content.view !== 'score') return
+  if (scoreImage.dataset.src !== content.scoreUrl) return
+  failedScoreUrl = null
+  scoreImage.hidden = false
+  scoreNode.hidden = false
+  emptyNode.hidden = true
+})
+
+scoreImage.addEventListener('error', () => {
+  if (!content || content.view !== 'score') return
+  failedScoreUrl = scoreImage.dataset.src ?? null
+  scoreNode.hidden = true
+  emptyNode.hidden = false
+  emptyNode.textContent = `${content.title} · 曲谱加载失败`
+})
 
 function toLine(text: string): HTMLParagraphElement {
   const line = document.createElement('p')

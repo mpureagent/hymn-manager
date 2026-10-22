@@ -10,7 +10,7 @@ import {
   type OpenEntry,
 } from '../shared/history'
 import { normalizeQuery } from '../shared/normalize'
-import type { ProjectionContent } from '../shared/projection'
+import type { ProjectionContent, ProjectionView } from '../shared/projection'
 import { search } from '../shared/search'
 import {
   DEFAULT_STYLE,
@@ -21,6 +21,7 @@ import {
 } from '../shared/style'
 import { ListView, type ListEntry } from './list-view'
 import { LyricsView } from './lyrics-view'
+import { ScoreView } from './score-view'
 import { StylePanel } from './style-panel'
 
 const SEARCH_DEBOUNCE_MS = 120
@@ -58,6 +59,10 @@ const openedList = el<HTMLUListElement>('opened-list')
 const openedEmpty = el<HTMLElement>('opened-empty')
 const openedCount = el<HTMLElement>('opened-count')
 const historyMore = el<HTMLButtonElement>('history-more')
+const tabLyrics = el<HTMLButtonElement>('tab-lyrics')
+const tabScore = el<HTMLButtonElement>('tab-score')
+const lyricsView = el<HTMLElement>('lyrics-view')
+const scorePanel = el<HTMLElement>('score-view')
 
 let books: PackBook[] = []
 let current: PackBook | null = null
@@ -72,6 +77,7 @@ let clearConfirmTimer: number | null = null
 let currentStyle: HymnStyle = { ...DEFAULT_STYLE }
 let stylePersistTimer: number | null = null
 let currentItem: HymnItem | null = null
+let previewView: ProjectionView = 'lyrics'
 let projectionActive = false
 let toastTimer: number | null = null
 
@@ -88,14 +94,34 @@ const stylePanel = new StylePanel({
 
 applyStyle(currentStyle)
 
-const lyrics = new LyricsView({
-  empty: el<HTMLElement>('preview-empty'),
-  panel: el<HTMLElement>('preview-panel'),
-  eyebrow: el<HTMLElement>('preview-eyebrow'),
-  title: el<HTMLElement>('preview-title'),
-  alt: el<HTMLElement>('preview-alt'),
-  body: el<HTMLElement>('lyrics-body'),
-})
+const lyrics = new LyricsView(
+  {
+    empty: el<HTMLElement>('preview-empty'),
+    panel: el<HTMLElement>('preview-panel'),
+    eyebrow: el<HTMLElement>('preview-eyebrow'),
+    title: el<HTMLElement>('preview-title'),
+    alt: el<HTMLElement>('preview-alt'),
+    body: el<HTMLElement>('lyrics-body'),
+  },
+  { onShowScore: () => setPreviewView('score') },
+)
+
+const score = new ScoreView(
+  {
+    viewport: el<HTMLElement>('score-viewport'),
+    image: el<HTMLImageElement>('score-image'),
+    zoomValue: el<HTMLElement>('score-zoom-value'),
+    zoomIn: el<HTMLButtonElement>('score-zoom-in'),
+    zoomOut: el<HTMLButtonElement>('score-zoom-out'),
+    message: el<HTMLElement>('score-message'),
+    messageTitle: el<HTMLElement>('score-message-title'),
+    messagePath: el<HTMLElement>('score-message-path'),
+  },
+  {
+    resolvePath: (book, number) =>
+      api ? api.getScorePath(book, number) : Promise.resolve(null),
+  },
+)
 
 const list = new ListView(el<HTMLElement>('hymn-list'), {
   overscan: 6,
@@ -105,7 +131,10 @@ const list = new ListView(el<HTMLElement>('hymn-list'), {
 function showPreview(entry: ListEntry): void {
   const item = current?.items.find((candidate) => candidate.number === entry.number)
   currentItem = item ?? null
-  if (item) lyrics.show(item)
+  if (item) {
+    lyrics.show(item)
+    score.setItem(item, current?.id ?? null)
+  }
 }
 
 function openFromList(entry: ListEntry): void {
@@ -124,6 +153,7 @@ function openFromList(entry: ListEntry): void {
 function resetPreview(): void {
   currentItem = null
   lyrics.clear()
+  score.clear()
 }
 
 function cancelScheduledSearch(): void {
@@ -271,7 +301,23 @@ function currentProjectionContent(): ProjectionContent | null {
     title: currentItem.title,
     verses: currentItem.verses ?? [],
     style: currentStyle,
+    view: previewView,
   }
+}
+
+/** 歌词/曲谱 tab 是唯一切换入口；投屏窗口内不提供切换控件。 */
+function setPreviewView(view: ProjectionView): void {
+  if (previewView === view) return
+  previewView = view
+  const showLyrics = view === 'lyrics'
+  tabLyrics.setAttribute('aria-selected', String(showLyrics))
+  tabLyrics.tabIndex = showLyrics ? 0 : -1
+  tabScore.setAttribute('aria-selected', String(!showLyrics))
+  tabScore.tabIndex = showLyrics ? -1 : 0
+  lyricsView.hidden = !showLyrics
+  scorePanel.hidden = showLyrics
+  score.setActive(!showLyrics)
+  pushProjection()
 }
 
 function pushProjection(): void {
@@ -319,6 +365,7 @@ function followProjection(content: ProjectionContent): void {
   if (!current || current.id !== book.id) selectBook(book, true)
   revealNumber(item.number)
   lyrics.show(item)
+  score.setItem(item, book.id)
   currentItem = item
 }
 
@@ -373,6 +420,7 @@ function openHistory(entry: OpenEntry): void {
 
   revealNumber(item.number)
   lyrics.show(item)
+  score.setItem(item, book.id)
   currentItem = item
   pushProjection()
   void persistOpened(item.number, item.title)
@@ -601,6 +649,9 @@ styleButton.addEventListener('click', () => {
 projectButton.addEventListener('click', () => {
   void toggleProjection()
 })
+
+tabLyrics.addEventListener('click', () => setPreviewView('lyrics'))
+tabScore.addEventListener('click', () => setPreviewView('score'))
 
 searchInput.addEventListener('compositionstart', () => {
   composing = true

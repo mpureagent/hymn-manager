@@ -23,12 +23,18 @@ function meaningfulVerses(item: HymnItem): RenderedVerse[] {
     .filter((verse) => verse.lines.length > 0)
 }
 
+export interface LyricsViewOptions {
+  onShowScore?(): void
+}
+
 /** 右侧歌词预览：头部「第N首 标题」，正文按段渲染，长歌词在预览区独立滚动。 */
 export class LyricsView {
   private readonly refs: LyricsViewRefs
+  private readonly options: LyricsViewOptions
 
-  constructor(refs: LyricsViewRefs) {
+  constructor(refs: LyricsViewRefs, options: LyricsViewOptions = {}) {
     this.refs = refs
+    this.options = options
   }
 
   clear(): void {
@@ -54,7 +60,7 @@ export class LyricsView {
 
     const verses = meaningfulVerses(item)
     if (verses.length === 0) {
-      this.refs.body.replaceChildren(missingLyrics())
+      this.refs.body.replaceChildren(missingLyrics(() => this.options.onShowScore?.()))
     } else {
       this.refs.body.replaceChildren(...verses.map(renderVerse))
     }
@@ -87,7 +93,7 @@ function renderVerse(verse: RenderedVerse, index: number): HTMLElement {
   return container
 }
 
-function missingLyrics(): HTMLElement {
+function missingLyrics(onShowScore: () => void): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.className = 'lyrics-missing'
 
@@ -102,9 +108,9 @@ function missingLyrics(): HTMLElement {
   const action = document.createElement('button')
   action.type = 'button'
   action.className = 'lyrics-missing-action'
-  action.disabled = true
-  action.title = '曲谱视图将在后续版本提供'
+  action.title = '切换到曲谱视图'
   action.textContent = '查看曲谱'
+  action.addEventListener('click', onShowScore)
 
   wrapper.append(title, hint, action)
   return wrapper

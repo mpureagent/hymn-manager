@@ -53,6 +53,22 @@ describe('normalizeProjectionContent', () => {
     expect(content?.title).toBe('第1首')
     expect(content?.verses).toEqual([])
     expect(content?.style).toEqual(DEFAULT_STYLE)
+    expect(content?.view).toBe('lyrics')
+  })
+
+  it('view 只接受 score，其余值回落歌词；渲染层传入的 scoreUrl 一律忽略', () => {
+    const score = normalizeProjectionContent({
+      book: 'red_book',
+      number: 1,
+      view: 'score',
+      scoreUrl: 'file:///etc/passwd',
+    })
+    expect(score?.view).toBe('score')
+    expect(score?.scoreUrl).toBeUndefined()
+
+    expect(normalizeProjectionContent({ book: 'red_book', number: 1, view: 'x' })?.view).toBe(
+      'lyrics',
+    )
   })
 })
 

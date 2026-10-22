@@ -1,12 +1,18 @@
 import { clampStyle, type HymnStyle } from './style'
 import type { HymnVerse } from './types'
 
+export type ProjectionView = 'lyrics' | 'score'
+
 export interface ProjectionContent {
   book: string
   number: number
   title: string
   verses: HymnVerse[]
   style: HymnStyle
+  /** 歌词或曲谱整图；只由主窗口切换。 */
+  view: ProjectionView
+  /** 主进程按 book/number 解析后注入，渲染层传入的同名字段会被忽略。 */
+  scoreUrl?: string | null
 }
 
 export interface ProjectionPage {
@@ -72,6 +78,7 @@ export function normalizeProjectionContent(raw: unknown): ProjectionContent | nu
     title: title || `第${number}首`,
     verses: normalizeVerses(raw.verses),
     style: clampStyle(raw.style),
+    view: raw.view === 'score' ? 'score' : 'lyrics',
   }
 }
 

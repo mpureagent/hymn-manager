@@ -7,10 +7,12 @@ import {
   normalizeProjectionContent,
   type ProjectionContent,
 } from '../shared/projection'
+import { filePathToUrl } from '../shared/score'
 import { clampStyle } from '../shared/style'
 import { dataPackSearchPaths, loadDataPack, type DataPackResult } from './data-pack'
 import { listChineseFonts } from './fonts'
 import { ProjectionWindow } from './projection-window'
+import { resolveScorePath } from './scores'
 import { SettingsStore, type WindowBounds } from './settings'
 import { HistoryStore } from './store'
 
@@ -161,14 +163,21 @@ function registerIpc(): void {
     return settings.get().style
   })
 
+  ipcMain.handle(IPC.scorePath, (_event, book: unknown, number: unknown) => {
+    if (!packResult.ok || typeof book !== 'string' || typeof number !== 'number') return null
+    if (!packResult.books.some((candidate) => candidate.id === book)) return null
+    return resolveScorePath(packResult.root, book, number)
+  })
+
   ipcMain.handle(IPC.projectionToggle, (_event, raw: unknown): ProjectionToggleResult => {
     if (projection?.active) {
       projection.close()
       return { active: false }
     }
 
-    const content = normalizeProjectionContent(raw)
-    if (!content) return { active: false, needSelection: true }
+    const normalized = normalizeProjectionContent(raw)
+    if (!normalized) return { active: false, needSelection: true }
+    const content = withScoreUrl(normalized)
 
     const choice = chooseProjectionDisplay(
       screen.getAllDisplays().map((display) => ({ id: display.id, bounds: display.bounds })),
@@ -188,8 +197,9 @@ function registerIpc(): void {
 
   ipcMain.on(IPC.projectionUpdate, (_event, raw: unknown) => {
     if (!projection?.active) return
-    const content = normalizeProjectionContent(raw)
-    if (!content) return
+    const normalized = normalizeProjectionContent(raw)
+    if (!normalized) return
+    const content = withScoreUrl(normalized)
     projectionContent = content
     projection.sendContent(content)
   })
@@ -232,13 +242,22 @@ function adjacentProjectionContent(direction: -1 | 1): ProjectionContent | null 
   const target = items[Math.min(items.length - 1, Math.max(0, index + direction))]
   if (!target || target.number === current.number) return null
 
-  return {
+  return withScoreUrl({
     book: book.id,
     number: target.number,
     title: target.title,
     verses: target.verses ?? [],
     style: current.style,
-  }
+    view: current.view,
+  })
+}
+
+/** 曲谱 URL 只由主进程按数据包解析，渲染层无法借投屏内容读取任意文件。 */
+function withScoreUrl(content: ProjectionContent): ProjectionContent {
+  if (content.view !== 'score') return { ...content, scoreUrl: null }
+  if (!packResult.ok) return { ...content, scoreUrl: null }
+  const path = resolveScorePath(packResult.root, content.book, content.number)
+  return { ...content, scoreUrl: path ? filePathToUrl(path) : null }
 }
 
 function parseOpenedInput(raw: unknown): OpenedInput | null {
