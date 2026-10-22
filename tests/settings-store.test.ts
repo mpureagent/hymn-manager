@@ -86,4 +86,13 @@ describe('SettingsStore', () => {
     store.patch({ currentBook: 'red_book' })
     expect(store.get().style.fontSize).toBe(88)
   })
+
+  it('记住上次投屏显示器，坏值忽略', () => {
+    const store = new SettingsStore(dir)
+    store.patch({ projectionDisplayId: 42 })
+    expect(new SettingsStore(dir).get().projectionDisplayId).toBe(42)
+
+    writeFileSync(settingsFile(), JSON.stringify({ projectionDisplayId: 'second' }), 'utf-8')
+    expect(new SettingsStore(dir).get().projectionDisplayId).toBeUndefined()
+  })
 })

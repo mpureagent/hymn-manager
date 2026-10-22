@@ -12,6 +12,8 @@ export interface WindowBounds {
 export interface SettingsData {
   currentBook: string | null
   windowBounds?: WindowBounds
+  /** 上次投屏所在显示器；显示器拔掉后选择逻辑会回退。 */
+  projectionDisplayId?: number
   style: HymnStyle
 }
 
@@ -83,6 +85,9 @@ function cloneSettings(data: SettingsData): SettingsData {
   return {
     currentBook: data.currentBook,
     ...(data.windowBounds ? { windowBounds: { ...data.windowBounds } } : {}),
+    ...(data.projectionDisplayId !== undefined
+      ? { projectionDisplayId: data.projectionDisplayId }
+      : {}),
     style: { ...data.style },
   }
 }
@@ -91,9 +96,18 @@ function sanitize(raw: unknown): SettingsData {
   if (!isRecord(raw)) return cloneSettings(DEFAULTS)
   const currentBook = typeof raw.currentBook === 'string' && raw.currentBook !== '' ? raw.currentBook : null
   const bounds = parseBounds(raw.windowBounds)
+  const projectionDisplayId =
+    typeof raw.projectionDisplayId === 'number' && Number.isInteger(raw.projectionDisplayId)
+      ? raw.projectionDisplayId
+      : undefined
   // 手工改坏或越界的 style（如 fontSize 9999）在加载时就收敛，不带到渲染层。
   const style = clampStyle(raw.style)
-  return bounds ? { currentBook, windowBounds: bounds, style } : { currentBook, style }
+  return {
+    currentBook,
+    ...(bounds ? { windowBounds: bounds } : {}),
+    ...(projectionDisplayId !== undefined ? { projectionDisplayId } : {}),
+    style,
+  }
 }
 
 function parseBounds(raw: unknown): WindowBounds | undefined {
