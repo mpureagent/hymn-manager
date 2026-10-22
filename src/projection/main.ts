@@ -101,7 +101,8 @@ function pageOverflows(available: number): boolean {
 
 /**
  * 按当前字号/视口重新算容量并分页。
- * 若仍溢出（多为大字号长行换行），按 90% 递减字号重排，最低到 24px。
+ * 逐页做溢出断言：只要任何一页溢出（多为大字号长行换行），
+ * 就按 90% 递减字号重排，最低到 24px。
  */
 function relayout(): void {
   if (!content) {
@@ -121,20 +122,39 @@ function relayout(): void {
 
     const metrics = measureMetrics(fontSize, style.lineHeight)
     const capacity = computeProjectionCapacity(metrics)
-    pages = paginateVerses(content.verses, capacity)
-    pageIndex = Math.min(Math.max(0, pageIndex), Math.max(0, pages.length - 1))
-    render()
-
+    const candidate = paginateVerses(content.verses, capacity)
     const available = metrics.viewportHeight - metrics.paddingTop - metrics.safeBottom
-    if (!pageOverflows(available) || fontSize <= FIT_MIN_FONT_SIZE) break
+
+    let overflow = false
+    for (let index = 0; index < candidate.length; index += 1) {
+      renderPageAt(candidate, index)
+      if (pageOverflows(available)) {
+        overflow = true
+        break
+      }
+    }
 
     const next = Math.max(FIT_MIN_FONT_SIZE, Math.round(fontSize * FIT_SCALE_STEP))
-    if (next >= fontSize) break
+    if (!overflow || fontSize <= FIT_MIN_FONT_SIZE || next >= fontSize) {
+      pages = candidate
+      pageIndex = Math.min(Math.max(0, pageIndex), Math.max(0, pages.length - 1))
+      render()
+      break
+    }
     fontSize = next
   }
 
   effectiveFontSize = fontSize
   updateFitHint()
+}
+
+/** 只换歌词节点，供逐页溢出测量使用；页码等状态由最终 render() 统一更新。 */
+function renderPageAt(candidate: ProjectionPage[], index: number): void {
+  const page = candidate[index]
+  const hasLines = page !== undefined && page.lines.length > 0
+  pageNode.hidden = !hasLines
+  emptyNode.hidden = hasLines
+  linesNode.replaceChildren(...(hasLines && page ? page.lines.map(toLine) : []))
 }
 
 function updateFitHint(): void {
