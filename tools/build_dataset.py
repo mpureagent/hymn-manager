@@ -149,6 +149,17 @@ def build_1218():
         }
     items = [best[n] for n in sorted(best)]
     missing = [n for n in sorted(idx) if n not in best]
+    # 目录里有、歌词页缺失的 24 首：保留为 index-only，保证全目录 1217 条可检索/可浏览。
+    for n in missing:
+        items.append({
+            "book": "black_book_1218",
+            "number": n,
+            "title": idx[n],
+            "title_official": idx[n],
+            "verses": [],
+            "source": "index-only",
+        })
+    items.sort(key=lambda item: item["number"])
     os.makedirs(f"{RAW}/books", exist_ok=True)
     json.dump({"book": "black_book_1218", "name": "赞美诗歌（1218首）", "alias": "千首本/黑皮",
                "count": len(items), "missing_lyrics": missing, "items": items},
