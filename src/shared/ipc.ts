@@ -1,4 +1,5 @@
 import type { HistoryData, OpenedInput } from './history'
+import type { FontChoice, HymnStyle } from './style'
 import type { PackBook } from './types'
 
 export const IPC = {
@@ -9,6 +10,8 @@ export const IPC = {
   historyAddSearch: 'history:add-search',
   historyAddOpened: 'history:add-opened',
   historyClear: 'history:clear',
+  fontsList: 'fonts:list',
+  styleSet: 'style:set',
 } as const
 
 export interface PackViewOk {
@@ -31,6 +34,7 @@ export type PackView = PackViewOk | PackViewError
 export interface Bootstrap {
   pack: PackView
   currentBook: string | null
+  style: HymnStyle
 }
 
 export interface HymnApi {
@@ -41,4 +45,6 @@ export interface HymnApi {
   addSearch(q: string): Promise<HistoryData>
   addOpened(entry: OpenedInput): Promise<HistoryData>
   clearHistory(): Promise<HistoryData>
+  listFonts(): Promise<FontChoice[]>
+  setStyle(style: HymnStyle): Promise<HymnStyle>
 }

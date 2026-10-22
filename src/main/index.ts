@@ -2,7 +2,9 @@ import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { dirname, join } from 'node:path'
 import type { OpenedInput } from '../shared/history'
 import { IPC, type Bootstrap, type PackView } from '../shared/ipc'
+import { clampStyle } from '../shared/style'
 import { dataPackSearchPaths, loadDataPack, type DataPackResult } from './data-pack'
+import { listChineseFonts } from './fonts'
 import { SettingsStore, type WindowBounds } from './settings'
 import { HistoryStore } from './store'
 
@@ -88,7 +90,11 @@ function currentBookFor(result: DataPackResult): string | null {
 }
 
 function bootstrap(): Bootstrap {
-  return { pack: toPackView(packResult), currentBook: currentBookFor(packResult) }
+  return {
+    pack: toPackView(packResult),
+    currentBook: currentBookFor(packResult),
+    style: settings.get().style,
+  }
 }
 
 function registerIpc(): void {
@@ -133,6 +139,15 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.historyClear, () => history.clear())
+
+  ipcMain.handle(IPC.fontsList, () => listChineseFonts())
+
+  ipcMain.handle(IPC.styleSet, (_event, raw: unknown) => {
+    // 渲染层与手改 settings.json 一样不可信：统一由 clampStyle 收敛后再落盘。
+    const style = clampStyle(raw)
+    settings.patch({ style })
+    return settings.get().style
+  })
 }
 
 function parseOpenedInput(raw: unknown): OpenedInput | null {
