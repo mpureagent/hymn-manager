@@ -5,3 +5,6 @@ build/
 *.log
 .DS_Store
 .artifacts/
+# 数据不入库（版权）：脚本进仓库，数据本地生成
+.raw/
+data/
