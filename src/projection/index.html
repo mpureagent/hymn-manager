@@ -160,6 +160,14 @@
         text-align: center;
       }
 
+      .controls .fit-hint {
+        padding: 0 4px;
+        color: #f0c9b8;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
       .controls .divider {
         width: 1px;
         height: 16px;
@@ -173,7 +181,7 @@
     </style>
   </head>
   <body>
-    <main class="stage" aria-live="polite">
+    <main id="stage" class="stage" aria-live="polite">
       <section id="page" class="page" hidden>
         <div id="lines" class="lines"></div>
       </section>
@@ -188,6 +196,7 @@
       <button type="button" data-action="prev-page">上一页</button>
       <span id="control-page" class="page-label">1/1</span>
       <button type="button" data-action="next-page">下一页</button>
+      <span id="fit-hint" class="fit-hint" hidden></span>
       <span class="divider" aria-hidden="true"></span>
       <button type="button" data-action="next-hymn">下一首</button>
       <span class="divider" aria-hidden="true"></span>

@@ -1,7 +1,8 @@
 import type { ProjectionApi } from '../shared/ipc'
 import {
-  buildProjectionPages,
+  computeProjectionCapacity,
   formatProjectionPage,
+  paginateVerses,
   type ProjectionContent,
   type ProjectionPage,
 } from '../shared/projection'
@@ -10,6 +11,12 @@ import { styleToCssVars, type HymnStyle } from '../shared/style'
 const api: ProjectionApi | undefined = window.projection
 
 const CONTROL_HIDE_MS = 3000
+/** 兜底降字号的下限，与 FONT_SIZE_MIN 保持一致。 */
+const FIT_MIN_FONT_SIZE = 24
+const FIT_SCALE_STEP = 0.9
+const CONTROL_SAFE_GAP = 12
+/** 舞台原本的下边距，控制条安全区更大时在 JS 里取 max。 */
+const STAGE_BOTTOM_PADDING = '10vh'
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -17,12 +24,15 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T
 }
 
+const stage = el<HTMLElement>('stage')
+
 const pageNode = el<HTMLElement>('page')
 const linesNode = el<HTMLElement>('lines')
 const emptyNode = el<HTMLElement>('empty')
 const indicator = el<HTMLElement>('indicator')
 const controls = el<HTMLElement>('controls')
 const controlPage = el<HTMLElement>('control-page')
+const fitHint = el<HTMLElement>('fit-hint')
 const prevPage = controls.querySelector<HTMLButtonElement>('[data-action="prev-page"]')
 const nextPage = controls.querySelector<HTMLButtonElement>('[data-action="next-page"]')
 const prevHymn = controls.querySelector<HTMLButtonElement>('[data-action="prev-hymn"]')
@@ -32,13 +42,105 @@ const exitButton = controls.querySelector<HTMLButtonElement>('[data-action="exit
 let content: ProjectionContent | null = null
 let pages: ProjectionPage[] = []
 let pageIndex = 0
+let effectiveFontSize = 0
 let hideTimer: number | null = null
+let resizeFrame: number | null = null
 
 /** 与主窗口预览共用同一份 styleToCssVars()，保证所见即所投。 */
-function applyStyle(style: HymnStyle): void {
-  for (const [name, value] of Object.entries(styleToCssVars(style))) {
+function applyStyle(style: HymnStyle, fontSize = style.fontSize): void {
+  const vars = styleToCssVars(style)
+  if (fontSize !== style.fontSize) vars['--hymn-font-size'] = `${fontSize}px`
+  for (const [name, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(name, value)
   }
+}
+
+/**
+ * 舞台下边距至少 10vh；控制条/页码更高时把安全区顶上去，
+ * 这样 flex 居中后的歌词块天然避开控制条，容量计算也只需读实际 padding。
+ */
+function updateStagePadding(): void {
+  const controlsStyle = getComputedStyle(controls)
+  const controlsBottom = Number.parseFloat(controlsStyle.bottom) || 0
+  let safeBottom = controlsBottom + controls.offsetHeight + CONTROL_SAFE_GAP
+
+  if (!indicator.hidden) {
+    const indicatorStyle = getComputedStyle(indicator)
+    const indicatorBottom = Number.parseFloat(indicatorStyle.bottom) || 0
+    safeBottom = Math.max(safeBottom, indicatorBottom + indicator.offsetHeight + CONTROL_SAFE_GAP)
+  }
+
+  stage.style.paddingBottom = `max(${STAGE_BOTTOM_PADDING}, ${Math.round(safeBottom)}px)`
+}
+
+function measureMetrics(fontSize: number, lineHeight: number) {
+  const stageStyle = getComputedStyle(stage)
+  return {
+    viewportHeight: window.innerHeight,
+    paddingTop: Number.parseFloat(stageStyle.paddingTop) || 0,
+    safeBottom: Number.parseFloat(stageStyle.paddingBottom) || 0,
+    lineHeightPx: fontSize * lineHeight,
+  }
+}
+
+/** 渲染后的运行时断言：歌词块高出可用区域（或压到控制条）即视为溢出。 */
+function pageOverflows(available: number): boolean {
+  if (pageNode.hidden) return false
+
+  const stageStyle = getComputedStyle(stage)
+  const paddingTop = Number.parseFloat(stageStyle.paddingTop) || 0
+  const paddingBottom = Number.parseFloat(stageStyle.paddingBottom) || 0
+  const rect = linesNode.getBoundingClientRect()
+
+  return (
+    rect.height > available + 1 ||
+    rect.top < paddingTop - 1 ||
+    rect.bottom > window.innerHeight - paddingBottom + 1
+  )
+}
+
+/**
+ * 按当前字号/视口重新算容量并分页。
+ * 若仍溢出（多为大字号长行换行），按 90% 递减字号重排，最低到 24px。
+ */
+function relayout(): void {
+  if (!content) {
+    pages = []
+    render()
+    updateFitHint()
+    return
+  }
+
+  updateStagePadding()
+
+  const style = content.style
+  let fontSize = style.fontSize
+
+  for (;;) {
+    applyStyle(style, fontSize)
+
+    const metrics = measureMetrics(fontSize, style.lineHeight)
+    const capacity = computeProjectionCapacity(metrics)
+    pages = paginateVerses(content.verses, capacity)
+    pageIndex = Math.min(Math.max(0, pageIndex), Math.max(0, pages.length - 1))
+    render()
+
+    const available = metrics.viewportHeight - metrics.paddingTop - metrics.safeBottom
+    if (!pageOverflows(available) || fontSize <= FIT_MIN_FONT_SIZE) break
+
+    const next = Math.max(FIT_MIN_FONT_SIZE, Math.round(fontSize * FIT_SCALE_STEP))
+    if (next >= fontSize) break
+    fontSize = next
+  }
+
+  effectiveFontSize = fontSize
+  updateFitHint()
+}
+
+function updateFitHint(): void {
+  const shrunk = content !== null && effectiveFontSize < content.style.fontSize
+  fitHint.hidden = !shrunk
+  fitHint.textContent = shrunk ? `字号已自动缩至 ${effectiveFontSize}px 防裁切` : ''
 }
 
 function setContent(next: ProjectionContent | null): void {
@@ -49,10 +151,15 @@ function setContent(next: ProjectionContent | null): void {
     content.number === next.number
 
   content = next
-  if (content) applyStyle(content.style)
   if (!sameSong) pageIndex = 0
-  pages = content ? buildProjectionPages(content.verses) : []
-  render()
+
+  if (content) {
+    relayout()
+  } else {
+    pages = []
+    render()
+    updateFitHint()
+  }
 }
 
 function render(): void {
@@ -141,6 +248,14 @@ function hideControls(): void {
 
 window.addEventListener('mousemove', showControls, { passive: true })
 
+window.addEventListener('resize', () => {
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    relayout()
+  })
+})
+
 controls.addEventListener('click', (event) => {
   const target = event.target
   if (!(target instanceof Element)) return
@@ -200,8 +315,12 @@ async function init(): Promise<void> {
 
   api.onContent(setContent)
   api.onStyle((style) => {
-    if (content) content = { ...content, style }
-    applyStyle(style)
+    if (content) {
+      content = { ...content, style }
+      relayout()
+    } else {
+      applyStyle(style)
+    }
   })
 
   try {
@@ -210,6 +329,11 @@ async function init(): Promise<void> {
     console.warn('[projection] 拉取投屏内容失败', error)
     setContent(null)
   }
+
+  // 字体懒加载完成后行宽可能变化，重新量一次。
+  void document.fonts.ready.then(() => {
+    if (content) relayout()
+  })
 }
 
 void init()
