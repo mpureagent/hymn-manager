@@ -10,3 +10,7 @@ build/
 data/
 # 生成的数据包不进版本库（只忽略仓库根目录，测试 fixture 仍入库）
 /hymns-data/
+
+# Python 缓存
+__pycache__/
+*.pyc

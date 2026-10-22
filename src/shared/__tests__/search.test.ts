@@ -99,6 +99,104 @@ describe('search：T2 指定用例', () => {
   })
 })
 
+describe('search：纯数字只走编号与标题', () => {
+  const BLACK_NUMERIC: HymnItem[] = [
+    {
+      number: 1,
+      title: '圣哉三一',
+      verses: [{ label: '', lines: ['圣哉圣哉圣哉全能大主宰'] }],
+    },
+    {
+      number: 2,
+      title: '愿主同在',
+      verses: [{ label: '', lines: ['第1082-首-祈求天上的神'] }],
+    },
+    {
+      number: 12,
+      title: '荣耀归于真神',
+      verses: [{ label: '', lines: ['第1192-2首-我要呼求主耶稣'] }],
+    },
+    {
+      number: 236,
+      title: '举起救恩的杯',
+      verses: [{ label: '', lines: ['第1204-2首-凡事谦虚温柔忍耐'] }],
+    },
+    {
+      number: 999,
+      title: '千年国度',
+      verses: [{ label: '', lines: ['主必再来'] }],
+    },
+  ]
+
+  const RED_NUMERIC: HymnItem[] = [
+    {
+      number: 1,
+      title: '圣哉三一歌',
+      verses: [{ label: '', lines: ['新编赞美诗442首', '圣哉，圣哉，圣哉！'] }],
+    },
+    {
+      number: 2,
+      title: '荣耀归主歌',
+      verses: [{ label: '', lines: ['荣耀归主'] }],
+    },
+  ]
+
+  it('千首本搜 1 只返回第 1 首，不含首句中的数字噪音', () => {
+    const results = search(BLACK_NUMERIC, '1')
+    expect(results.map((result) => [result.item.number, result.kind])).toEqual([[1, 'number']])
+  })
+
+  it('千首本搜 2 只返回第 2 首', () => {
+    const results = search(BLACK_NUMERIC, '2')
+    expect(results.map((result) => [result.item.number, result.kind])).toEqual([[2, 'number']])
+  })
+
+  it('千首本搜 12 只返回第 12 首', () => {
+    const results = search(BLACK_NUMERIC, '12')
+    expect(results.map((result) => [result.item.number, result.kind])).toEqual([[12, 'number']])
+  })
+
+  it('红本搜 2 只返回第 2 首，不命中首句里的「442」', () => {
+    const results = search(RED_NUMERIC, '2')
+    expect(results.map((result) => [result.item.number, result.kind])).toEqual([[2, 'number']])
+  })
+
+  it('红本搜 500 返回空（最大编号 442）', () => {
+    expect(search(RED_NUMERIC, '500')).toEqual([])
+  })
+
+  it('千首本搜 999 返回第 999 首', () => {
+    const results = search(BLACK_NUMERIC, '999')
+    expect(results.map((result) => [result.item.number, result.kind])).toEqual([[999, 'number']])
+  })
+
+  it('编号命中时只返回该条，即使首句/别名里也有相同数字', () => {
+    const items: HymnItem[] = [
+      { number: 7, title: '其他' },
+      { number: 8, title: '7号颂歌' },
+      { number: 9, title: '别的', title_alt: '别名7', verses: [{ label: '', lines: ['7'] }] },
+    ]
+    expect(search(items, '7').map((result) => [result.item.number, result.kind])).toEqual([
+      [7, 'number'],
+    ])
+  })
+
+  it('编号不存在时回退到标题中的数字，跳过首句与别名', () => {
+    const items: HymnItem[] = [
+      { number: 1, title: '第500首颂歌' },
+      {
+        number: 2,
+        title: '其他',
+        title_alt: '500别名',
+        verses: [{ label: '', lines: ['500'] }],
+      },
+    ]
+    expect(search(items, '500').map((result) => [result.item.number, result.kind])).toEqual([
+      [1, 'title-contains'],
+    ])
+  })
+})
+
 describe('search：优先级与归一化', () => {
   it('5 级优先级：编号 > 标题前缀 > 标题包含 > 首句 > 别名', () => {
     const items: HymnItem[] = [

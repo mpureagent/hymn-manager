@@ -55,11 +55,25 @@ export function search(
   }
 
   const numeric = /^\d+$/.test(query) ? Number(query) : null
+  if (numeric !== null) {
+    // 编号命中时只返回该条：用户按编号找歌时，首句/别名里的数字都是噪音。
+    const exact = items.find((item) => item.number === numeric)
+    if (exact) {
+      return [{ item: exact, score: SCORE.number, kind: 'number' }]
+    }
+  }
+
   const results: SearchResult[] = []
 
   for (const item of items) {
-    if (numeric !== null && item.number === numeric) {
-      results.push({ item, score: SCORE.number, kind: 'number' })
+    if (numeric !== null) {
+      // 编号不存在（如红本 500）：只回退到标题中的数字，跳过首句与别名匹配。
+      const title = normalizeText(item.title, options)
+      if (title.startsWith(query)) {
+        results.push({ item, score: SCORE['title-prefix'], kind: 'title-prefix' })
+      } else if (title.includes(query)) {
+        results.push({ item, score: SCORE['title-contains'], kind: 'title-contains' })
+      }
       continue
     }
 

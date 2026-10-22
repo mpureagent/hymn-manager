@@ -17,7 +17,14 @@ DATA = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "books"
 TIME_RESIDUE = re.compile(r"^\[?\d{1,2}:\d{2}[.:]\d{1,3}\]?")
 LEAD_DIGIT = re.compile(r"^\d{1,4}(?:上|下)?[_\s．.、]")
 JUNK = re.compile(r"(www\.|https?://|LRC|lrc|制作|^专辑[:：]|歌词[:：])")
-META_RESIDUE = re.compile(r"^(歌手|专辑|词|曲|作词|作曲|演唱|编曲|制作|出品)\s*[:：]")
+META_RESIDUE = re.compile(
+    r"^(?:歌手|专辑|词|曲|作词|作曲|词曲|谱曲|演唱|编曲|制作|出品|出品人|监制|"
+    r"混音|录音|音乐人|歌词编辑|编辑|QQ|微信|邮箱|电话|和声|指挥|司琴)\s*[:：]\s*.{0,25}$"
+)
+# 标题行残留：歌名：xxx / 第1082-首-xxx / 第1192-2首-xxx / 第NNN首-xxx / 第NNN首xxx
+TITLE_RESIDUE = re.compile(
+    r"^(?:歌名\s*[:：]|第\s*\d{1,4}\s*(?:[-－—_]\s*\d{0,2}\s*)?首)"
+)
 BOM = re.compile("^[\ufeff\ufffd]")
 
 EXPECT = {
@@ -57,7 +64,7 @@ def main() -> int:
         if with_v and multi / with_v < 0.5:
             fail(f"{bid}: 多段条目仅 {multi}/{with_v}，段落结构疑似损坏（投屏无法分页）")
 
-        time_hits, lead_hits, junk_hits, empty_lines, meta_hits = [], [], [], 0, []
+        time_hits, lead_hits, junk_hits, empty_lines, meta_hits, title_hits = [], [], [], 0, [], []
         for it in items:
             for v in it["verses"]:
                 for line in v["lines"]:
@@ -71,9 +78,12 @@ def main() -> int:
                         junk_hits.append((it["number"], line[:40]))
                     if META_RESIDUE.match(line):
                         meta_hits.append((it["number"], line[:40]))
+                    if TITLE_RESIDUE.match(line):
+                        title_hits.append((it["number"], line[:40]))
 
         for tag, hits in (("时间轴/BOM 残留", time_hits), ("段号残留", lead_hits),
-                          ("杂行", junk_hits), ("元信息残留", meta_hits)):
+                          ("杂行", junk_hits), ("元信息残留", meta_hits),
+                          ("标题行残留", title_hits)):
             if hits:
                 fail(f"{bid}: {tag} {len(hits)} 行，例 {hits[:3]}")
         if empty_lines:
@@ -81,7 +91,8 @@ def main() -> int:
 
         print(f"{bid}: {len(items)} 条，有歌词 {with_v}，"
               f"时间轴残留 {len(time_hits)}，段号残留 {len(lead_hits)}，"
-              f"杂行 {len(junk_hits)}，元信息残留 {len(meta_hits)}")
+              f"杂行 {len(junk_hits)}，元信息残留 {len(meta_hits)}，"
+              f"标题行残留 {len(title_hits)}")
 
     # 抽查两首关键条目：跨本同名的歌词必须不同
     red = json.loads((DATA / "red_book.json").read_text(encoding="utf-8"))
