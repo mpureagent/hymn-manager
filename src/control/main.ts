@@ -11,8 +11,16 @@ import {
 } from '../shared/history'
 import { normalizeQuery } from '../shared/normalize'
 import { search } from '../shared/search'
+import {
+  DEFAULT_STYLE,
+  FALLBACK_FONTS,
+  clampStyle,
+  styleToCssVars,
+  type HymnStyle,
+} from '../shared/style'
 import { ListView, type ListEntry } from './list-view'
 import { LyricsView } from './lyrics-view'
+import { StylePanel } from './style-panel'
 
 const SEARCH_DEBOUNCE_MS = 120
 
@@ -33,6 +41,7 @@ const guideError = el<HTMLElement>('guide-error')
 const guideRetry = el<HTMLButtonElement>('guide-retry')
 const bookSelect = el<HTMLSelectElement>('book-select')
 const searchInput = el<HTMLInputElement>('search-input')
+const styleButton = el<HTMLButtonElement>('btn-style')
 const listHeading = el<HTMLElement>('list-heading')
 const catalogCount = el<HTMLElement>('catalog-count')
 const listEmpty = el<HTMLElement>('list-empty')
@@ -57,10 +66,21 @@ let historyData: HistoryData = emptyHistory()
 let showAllOpened = false
 let confirmingClear = false
 let clearConfirmTimer: number | null = null
+let currentStyle: HymnStyle = { ...DEFAULT_STYLE }
+let stylePersistTimer: number | null = null
 
 const searchRecorder = createEffectiveSearchRecorder((query) => {
   void persistSearch(query)
 })
+
+const stylePanel = new StylePanel({
+  fonts: FALLBACK_FONTS,
+  style: currentStyle,
+  onChange: changeStyle,
+  onClose: flushStylePersistence,
+})
+
+applyStyle(currentStyle)
 
 const lyrics = new LyricsView({
   empty: el<HTMLElement>('preview-empty'),
@@ -191,6 +211,55 @@ async function persistOpened(number: number, title: string): Promise<void> {
     applyHistory(await api.addOpened({ book: current.id, number, title }))
   } catch (error) {
     console.warn('[history] 记录打开失败', error)
+  }
+}
+
+/** 只改根元素上的 CSS 变量，不触碰预览 DOM，因此改样式不会重排歌词节点。 */
+function applyStyle(style: HymnStyle): void {
+  for (const [name, value] of Object.entries(styleToCssVars(style))) {
+    document.documentElement.style.setProperty(name, value)
+  }
+}
+
+function changeStyle(patch: Partial<HymnStyle>): HymnStyle {
+  currentStyle = clampStyle({ ...currentStyle, ...patch })
+  applyStyle(currentStyle)
+  scheduleStylePersist(currentStyle)
+  return currentStyle
+}
+
+function scheduleStylePersist(style: HymnStyle): void {
+  if (!api) return
+  if (stylePersistTimer !== null) window.clearTimeout(stylePersistTimer)
+  stylePersistTimer = window.setTimeout(() => {
+    stylePersistTimer = null
+    void persistStyle(style)
+  }, 200)
+}
+
+async function persistStyle(style: HymnStyle): Promise<void> {
+  if (!api) return
+  try {
+    await api.setStyle(style)
+  } catch (error) {
+    console.warn('[style] 保存样式失败', error)
+  }
+}
+
+function flushStylePersistence(): void {
+  if (stylePersistTimer === null) return
+  window.clearTimeout(stylePersistTimer)
+  stylePersistTimer = null
+  void persistStyle(currentStyle)
+}
+
+async function loadFonts(): Promise<void> {
+  if (!api) return
+  try {
+    const fonts = await api.listFonts()
+    if (fonts.length > 0) stylePanel.setFonts(fonts)
+  } catch (error) {
+    console.warn('[fonts] 读取系统字体失败，保持固定候选', error)
   }
 }
 
@@ -338,6 +407,7 @@ function showApp(pack: PackViewOk, currentBookId: string | null): void {
   app.hidden = false
   searchInput.disabled = false
   bookSelect.disabled = false
+  styleButton.disabled = false
 
   books = pack.books
   bookSelect.replaceChildren(
@@ -373,6 +443,7 @@ function showGuide(pack: PackViewError): void {
   guide.hidden = false
   searchInput.disabled = true
   bookSelect.disabled = true
+  styleButton.disabled = true
 
   const missing = pack.reason === 'missing'
   guideTitle.textContent = missing ? '未找到数据包' : '数据包无法读取'
@@ -412,6 +483,10 @@ function showGuide(pack: PackViewError): void {
 }
 
 function applyBootstrap(bootstrap: Awaited<ReturnType<HymnApi['bootstrap']>>): void {
+  currentStyle = clampStyle(bootstrap.style)
+  applyStyle(currentStyle)
+  stylePanel.setStyle(currentStyle)
+
   if (!bootstrap.pack.ok) {
     showGuide(bootstrap.pack)
     return
@@ -422,6 +497,16 @@ function applyBootstrap(bootstrap: Awaited<ReturnType<HymnApi['bootstrap']>>): v
 bookSelect.addEventListener('change', () => {
   const book = books.find((candidate) => candidate.id === bookSelect.value)
   if (book) selectBook(book, true)
+})
+
+styleButton.addEventListener('click', () => {
+  if (styleButton.disabled) return
+  if (stylePanel.isOpen) {
+    stylePanel.close()
+    return
+  }
+  stylePanel.setStyle(currentStyle)
+  stylePanel.open()
 })
 
 searchInput.addEventListener('compositionstart', () => {
@@ -589,6 +674,7 @@ async function init(): Promise<void> {
     })
   }
   void loadHistory()
+  void loadFonts()
 }
 
 renderHistory()

@@ -19,6 +19,17 @@
         --accent-soft: #f0e3d8;
         --focus: #7d3b2f;
         --row-height: 44px;
+
+        /* 预览区样式变量：只由 shared/style.ts 的 styleToCssVars() 覆盖 */
+        --hymn-font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun",
+          "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+        --hymn-font-size: 48px;
+        --hymn-line-height: 1.6;
+        --hymn-ink: #2b2118;
+        --hymn-bg: #f5f0e6;
+        --hymn-ink-soft: rgba(43, 33, 24, 0.58);
+        --hymn-rule: rgba(43, 33, 24, 0.16);
+        --hymn-align: center;
       }
 
       * {
@@ -520,15 +531,18 @@
         justify-content: center;
         min-width: 0;
         overflow: hidden;
-        background:
-          radial-gradient(circle at 50% 30%, #fbf8f1 0, var(--bg) 70%);
+        background: var(--hymn-bg);
+        color: var(--hymn-ink);
+        transition:
+          background-color 0.18s ease,
+          color 0.18s ease;
       }
 
       .preview-empty {
         align-self: center;
         max-width: 520px;
         padding: 48px;
-        text-align: center;
+        text-align: var(--hymn-align);
       }
 
       .preview-panel {
@@ -544,7 +558,8 @@
       .preview-head {
         flex: 0 0 auto;
         padding-bottom: 20px;
-        border-bottom: 1px solid var(--line-soft);
+        border-bottom: 1px solid var(--hymn-rule);
+        text-align: var(--hymn-align);
       }
 
       .preview-mark {
@@ -554,10 +569,10 @@
         width: 54px;
         height: 54px;
         margin-bottom: 18px;
-        border: 1px solid var(--line);
+        border: 1px solid var(--hymn-rule);
         border-radius: 50%;
-        background: var(--surface);
-        color: var(--accent);
+        background: transparent;
+        color: var(--hymn-ink-soft);
         font-family: Georgia, serif;
         font-size: 26px;
       }
@@ -573,21 +588,22 @@
 
       .preview-hint {
         margin-top: 10px !important;
-        color: var(--faint);
+        color: var(--hymn-ink-soft);
         font-size: 12px;
         line-height: 1.7;
       }
 
       .preview-eyebrow {
         margin: 0;
-        color: var(--accent);
+        color: var(--hymn-ink-soft);
         font-size: 12px;
         letter-spacing: 0.18em;
       }
 
       .preview-title {
         margin: 12px 0 0;
-        font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+        color: var(--hymn-ink);
+        font-family: var(--hymn-font-family);
         font-size: 30px;
         font-weight: 600;
         letter-spacing: 0.06em;
@@ -595,7 +611,7 @@
 
       .preview-alt {
         margin: 8px 0 0;
-        color: var(--faint);
+        color: var(--hymn-ink-soft);
         font-size: 14px;
         letter-spacing: 0.04em;
       }
@@ -604,10 +620,12 @@
         flex: 1 1 auto;
         min-height: 0;
         padding: 22px 0 56px;
+        overflow-x: hidden;
         overflow-y: auto;
         outline: none;
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
+        text-align: var(--hymn-align);
       }
 
       .lyrics-body:focus-visible {
@@ -622,17 +640,19 @@
       .verse-label {
         display: block;
         margin-bottom: 4px;
-        color: var(--faint);
+        color: var(--hymn-ink-soft);
         font-size: 11px;
         letter-spacing: 0.18em;
       }
 
       .lyric-line {
         margin: 0;
-        font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
-        font-size: 18px;
-        line-height: 1.6;
+        color: var(--hymn-ink);
+        font-family: var(--hymn-font-family);
+        font-size: var(--hymn-font-size);
+        line-height: var(--hymn-line-height);
         letter-spacing: 0.035em;
+        overflow-wrap: anywhere;
       }
 
       .lyrics-missing {
@@ -641,6 +661,7 @@
 
       .lyrics-missing-title {
         margin: 0;
+        color: var(--hymn-ink);
         font-size: 20px;
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -648,19 +669,370 @@
 
       .lyrics-missing-hint {
         margin: 10px 0 18px;
-        color: var(--muted);
+        color: var(--hymn-ink-soft);
         line-height: 1.7;
       }
 
       .lyrics-missing-action {
         height: 36px;
         padding: 0 16px;
+        border: 1px solid var(--hymn-rule);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--hymn-ink-soft);
+        font: inherit;
+        cursor: not-allowed;
+      }
+
+      /* 样式抽屉：右侧滑出，遮罩点击关闭 */
+      .style-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+      }
+
+      .style-mask {
+        position: absolute;
+        inset: 0;
+        background: rgba(35, 28, 20, 0.34);
+        animation: style-mask-in 0.18s ease-out;
+      }
+
+      .style-panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        width: min(400px, 94vw);
+        border-left: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: -18px 0 48px rgba(69, 56, 40, 0.18);
+        animation: style-panel-in 0.2s ease-out;
+        outline: none;
+      }
+
+      @keyframes style-mask-in {
+        from {
+          opacity: 0;
+        }
+      }
+
+      @keyframes style-panel-in {
+        from {
+          transform: translateX(100%);
+        }
+      }
+
+      .style-panel-head {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .style-panel-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+      }
+
+      .style-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font: inherit;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .style-close:hover {
+        border-color: #d9b3a5;
+        color: var(--accent);
+      }
+
+      .style-close:focus-visible,
+      .style-preset:focus-visible,
+      .style-swatch:focus-visible,
+      .style-segmented button:focus-visible,
+      .style-reset:focus-visible,
+      .style-select:focus-visible,
+      .style-number:focus-visible,
+      .style-color-input:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .style-panel-body {
+        flex: 1 1 auto;
+        padding: 4px 18px 26px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .style-section {
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .style-section-title {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+      }
+
+      .style-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .style-preset {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 7px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-soft);
+        color: var(--ink);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .style-preset:hover {
+        border-color: #d9b3a5;
+      }
+
+      .style-preset.active {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+
+      .style-preset-preview {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 34px;
+        border: 1px solid var(--line-soft);
+        border-radius: 5px;
+        background: var(--preset-bg);
+        color: var(--preset-ink);
+        font-family: var(--hymn-font-family);
+        font-size: 17px;
+      }
+
+      .style-preset-label {
+        font-size: 11.5px;
+        text-align: center;
+      }
+
+      .style-sample {
+        margin-top: 2px;
+        padding: 12px 14px 14px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--hymn-bg);
+        color: var(--hymn-ink);
+      }
+
+      .style-sample-label {
+        display: block;
+        color: var(--hymn-ink-soft);
+        font-size: 10px;
+        letter-spacing: 0.16em;
+      }
+
+      .style-sample-text {
+        margin: 4px 0 0;
+        font-family: var(--hymn-font-family);
+        font-size: clamp(20px, calc(var(--hymn-font-size) * 0.46), 52px);
+        line-height: var(--hymn-line-height);
+        text-align: var(--hymn-align);
+        overflow-wrap: anywhere;
+      }
+
+      .style-field {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 11px;
+      }
+
+      .style-field:last-child {
+        margin-bottom: 0;
+      }
+
+      .style-field-stack {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .style-label {
+        flex: 0 0 auto;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .style-select {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 34px;
+        padding: 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        font-size: 13px;
+      }
+
+      .style-range-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .style-range {
+        flex: 1 1 auto;
+        min-width: 0;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .style-number {
+        flex: 0 0 auto;
+        width: 64px;
+        height: 32px;
+        padding: 0 6px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      .style-value {
+        flex: 0 0 auto;
+        min-width: 32px;
+        color: var(--muted);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      .style-unit {
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      .style-segmented {
+        display: flex;
+        flex: 0 0 auto;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+
+      .style-segmented button {
+        height: 32px;
+        padding: 0 14px;
+        border: 0;
+        border-left: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        font: inherit;
+        font-size: 12.5px;
+        cursor: pointer;
+      }
+
+      .style-segmented button:first-child {
+        border-left: 0;
+      }
+
+      .style-segmented button[aria-pressed="true"] {
+        background: var(--accent);
+        color: #fffaf3;
+      }
+
+      .style-color-grid {
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 6px;
+      }
+
+      .style-swatch {
+        width: 100%;
+        aspect-ratio: 1;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .style-swatch:hover {
+        transform: scale(1.08);
+      }
+
+      .style-swatch.active {
+        box-shadow:
+          0 0 0 2px var(--surface),
+          0 0 0 4px var(--accent);
+      }
+
+      .style-color-custom {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 11px;
+      }
+
+      .style-color-input {
+        width: 46px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .style-reset {
+        width: 100%;
+        height: 38px;
+        margin-top: 18px;
         border: 1px solid var(--line);
         border-radius: 7px;
         background: var(--surface-soft);
-        color: var(--faint);
+        color: var(--ink);
         font: inherit;
-        cursor: not-allowed;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .style-reset:hover {
+        border-color: #d9b3a5;
+        color: var(--accent);
       }
 
       /* 数据包引导页 */
@@ -828,7 +1200,7 @@
         disabled
       />
       <div class="spacer"></div>
-      <button id="btn-style" class="tool-btn" type="button" disabled title="样式设置（后续版本）">样式</button>
+      <button id="btn-style" class="tool-btn" type="button" disabled title="样式设置">样式</button>
       <button id="btn-project" class="tool-btn" type="button" disabled title="投屏（后续版本）">投屏</button>
     </header>
 
