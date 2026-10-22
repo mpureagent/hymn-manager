@@ -1,18 +1,28 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { dirname, join } from 'node:path'
 import type { OpenedInput } from '../shared/history'
-import { IPC, type Bootstrap, type PackView } from '../shared/ipc'
+import { IPC, type Bootstrap, type PackView, type ProjectionToggleResult } from '../shared/ipc'
+import {
+  chooseProjectionDisplay,
+  normalizeProjectionContent,
+  type ProjectionContent,
+} from '../shared/projection'
 import { clampStyle } from '../shared/style'
 import { dataPackSearchPaths, loadDataPack, type DataPackResult } from './data-pack'
 import { listChineseFonts } from './fonts'
+import { ProjectionWindow } from './projection-window'
 import { SettingsStore, type WindowBounds } from './settings'
 import { HistoryStore } from './store'
 
 const MIN_WIDTH = 1024
 const MIN_HEIGHT = 640
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
+const CONTROL_TITLE = '赞美诗歌本'
+const PROJECTING_TITLE = '赞美诗歌本 · 投屏中'
 
 let control: BrowserWindow | null = null
+let projection: ProjectionWindow | null = null
+let projectionContent: ProjectionContent | null = null
 let settings: SettingsStore
 let history: HistoryStore
 let searchPaths: string[] = []
@@ -36,10 +46,12 @@ function start(): void {
   history = new HistoryStore(app.getPath('userData'))
   searchPaths = computeSearchPaths()
   packResult = resolvePack()
+  projection = createProjectionWindow()
   registerIpc()
   control = createControlWindow()
   control.on('closed', () => {
     control = null
+    projection?.close()
   })
 }
 
@@ -148,6 +160,85 @@ function registerIpc(): void {
     settings.patch({ style })
     return settings.get().style
   })
+
+  ipcMain.handle(IPC.projectionToggle, (_event, raw: unknown): ProjectionToggleResult => {
+    if (projection?.active) {
+      projection.close()
+      return { active: false }
+    }
+
+    const content = normalizeProjectionContent(raw)
+    if (!content) return { active: false, needSelection: true }
+
+    const choice = chooseProjectionDisplay(
+      screen.getAllDisplays().map((display) => ({ id: display.id, bounds: display.bounds })),
+      screen.getPrimaryDisplay().id,
+      settings.get().projectionDisplayId,
+    )
+    if (!choice) return { active: false }
+
+    projectionContent = content
+    settings.patch({ projectionDisplayId: choice.display.id })
+    projection?.open(choice.display, content.style.bgColor)
+    setControlTitle(true)
+    sendToControl(IPC.projectionState, { active: true })
+    projection?.sendContent(content)
+    return choice.hint ? { active: true, hint: choice.hint } : { active: true }
+  })
+
+  ipcMain.on(IPC.projectionUpdate, (_event, raw: unknown) => {
+    if (!projection?.active) return
+    const content = normalizeProjectionContent(raw)
+    if (!content) return
+    projectionContent = content
+    projection.sendContent(content)
+  })
+
+  ipcMain.on(IPC.projectionSetStyle, (_event, raw: unknown) => {
+    if (!projection?.active) return
+    const style = clampStyle(raw)
+    if (projectionContent) projectionContent = { ...projectionContent, style }
+    projection.sendStyle(style)
+  })
+
+  ipcMain.handle(IPC.projectionPull, () => (projection?.active ? projectionContent : null))
+
+  ipcMain.on(IPC.projectionClose, () => projection?.close())
+
+  ipcMain.on(IPC.projectionNav, (_event, direction: unknown) => {
+    if (direction !== -1 && direction !== 1) return
+    const next = adjacentProjectionContent(direction)
+    if (!next) return
+    projectionContent = next
+    projection?.sendContent(next)
+    sendToControl(IPC.projectionChanged, next)
+  })
+}
+
+function adjacentProjectionContent(direction: -1 | 1): ProjectionContent | null {
+  const current = projectionContent
+  if (!current || !packResult.ok) return null
+
+  const book = packResult.books.find((candidate) => candidate.id === current.book)
+  if (!book) return null
+
+  const items = book.items
+    .filter((item) => Number.isInteger(item.number) && item.number >= 0)
+    .slice()
+    .sort((a, b) => a.number - b.number)
+  const index = items.findIndex((item) => item.number === current.number)
+  if (index < 0) return null
+
+  const target = items[Math.min(items.length - 1, Math.max(0, index + direction))]
+  if (!target || target.number === current.number) return null
+
+  return {
+    book: book.id,
+    number: target.number,
+    title: target.title,
+    verses: target.verses ?? [],
+    style: current.style,
+  }
 }
 
 function parseOpenedInput(raw: unknown): OpenedInput | null {
@@ -158,6 +249,44 @@ function parseOpenedInput(raw: unknown): OpenedInput | null {
   return { book, number: number as number, title: typeof title === 'string' ? title : '' }
 }
 
+function createProjectionWindow(): ProjectionWindow {
+  const devUrl = devProjectionUrl()
+  return new ProjectionWindow({
+    preload: join(__dirname, 'projection-preload.js'),
+    loadFile: join(__dirname, '..', 'renderer', 'projection', 'index.html'),
+    ...(devUrl ? { loadUrl: devUrl } : {}),
+    onReady: () => {
+      if (projectionContent) projection?.sendContent(projectionContent)
+    },
+    onClosed: () => {
+      projectionContent = null
+      setControlTitle(false)
+      sendToControl(IPC.projectionState, { active: false })
+    },
+  })
+}
+
+function devProjectionUrl(): string | undefined {
+  if (!DEV_URL) return undefined
+  try {
+    const url = new URL(DEV_URL)
+    url.pathname = url.pathname.replace(/\/control\/index\.html$/, '/projection/index.html')
+    return url.toString()
+  } catch {
+    return undefined
+  }
+}
+
+function setControlTitle(projecting: boolean): void {
+  if (!control || control.isDestroyed()) return
+  control.setTitle(projecting ? PROJECTING_TITLE : CONTROL_TITLE)
+}
+
+function sendToControl(channel: string, payload: unknown): void {
+  if (!control || control.isDestroyed()) return
+  control.webContents.send(channel, payload)
+}
+
 function createControlWindow(): BrowserWindow {
   const saved = restoreBounds(settings.get().windowBounds)
   const win = new BrowserWindow({
@@ -166,7 +295,7 @@ function createControlWindow(): BrowserWindow {
     ...(saved?.x !== undefined && saved.y !== undefined ? { x: saved.x, y: saved.y } : {}),
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    title: '赞美诗歌本',
+    title: CONTROL_TITLE,
     backgroundColor: '#f4f1e9',
     show: false,
     webPreferences: {
