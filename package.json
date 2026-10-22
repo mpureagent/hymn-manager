@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc -p tsconfig.json --noEmit",
+    "lint": "npm run typecheck",
     "dev": "npm run build:main && node scripts/dev.mjs",
     "start": "npm run build && node scripts/start.mjs",
     "pack:win": "npm run build && electron-builder --win --x64"

@@ -16,6 +16,8 @@ export interface PackViewError {
   ok: false
   reason: 'missing' | 'corrupt'
   searchedPaths: string[]
+  /** 开发态指向仓库根目录，打包态指向 exe 同目录 */
+  recommendedPath?: string
   error?: string
 }
 

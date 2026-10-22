@@ -61,10 +61,19 @@ function resolvePack(): DataPackResult {
 
 function toPackView(result: DataPackResult): PackView {
   if (result.ok) return { ok: true, root: result.root, books: result.books }
+  const recommendedPath = app.isPackaged
+    ? searchPaths[0]
+    : searchPaths[searchPaths.length - 1]
   if (result.reason === 'corrupt') {
-    return { ok: false, reason: 'corrupt', searchedPaths: result.searchedPaths, error: result.error }
+    return {
+      ok: false,
+      reason: 'corrupt',
+      searchedPaths: result.searchedPaths,
+      recommendedPath,
+      error: result.error,
+    }
   }
-  return { ok: false, reason: 'missing', searchedPaths: result.searchedPaths }
+  return { ok: false, reason: 'missing', searchedPaths: result.searchedPaths, recommendedPath }
 }
 
 function currentBookFor(result: DataPackResult): string | null {
@@ -105,7 +114,7 @@ function createControlWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: saved?.width ?? 1180,
     height: saved?.height ?? 760,
-    ...(saved ? { x: saved.x, y: saved.y } : {}),
+    ...(saved?.x !== undefined && saved.y !== undefined ? { x: saved.x, y: saved.y } : {}),
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     title: '赞美诗歌本',
@@ -123,7 +132,22 @@ function createControlWindow(): BrowserWindow {
     if (!win.isDestroyed()) win.show()
   })
 
+  let boundsTimer: NodeJS.Timeout | null = null
+  const saveBoundsSoon = (): void => {
+    if (boundsTimer) clearTimeout(boundsTimer)
+    boundsTimer = setTimeout(() => {
+      boundsTimer = null
+      if (!win.isDestroyed()) settings.patch({ windowBounds: normalBounds(win) })
+    }, 500)
+  }
+  win.on('resize', saveBoundsSoon)
+  win.on('move', saveBoundsSoon)
+
   win.on('close', () => {
+    if (boundsTimer) {
+      clearTimeout(boundsTimer)
+      boundsTimer = null
+    }
     settings.patch({ windowBounds: normalBounds(win) })
   })
 
@@ -141,7 +165,7 @@ function normalBounds(win: BrowserWindow): WindowBounds {
   return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
 }
 
-function restoreBounds(saved: WindowBounds | undefined): WindowBounds | undefined {
+function restoreBounds(saved: WindowBounds | undefined): Partial<WindowBounds> | undefined {
   if (!saved) return undefined
   const width = Math.max(MIN_WIDTH, Math.round(saved.width))
   const height = Math.max(MIN_HEIGHT, Math.round(saved.height))
@@ -151,5 +175,5 @@ function restoreBounds(saved: WindowBounds | undefined): WindowBounds | undefine
     const area = display.workArea
     return x < area.x + area.width && x + width > area.x && y < area.y + area.height && y + height > area.y
   })
-  return visible ? { x, y, width, height } : { x: saved.x, y: saved.y, width, height }
+  return visible ? { x, y, width, height } : { width, height }
 }

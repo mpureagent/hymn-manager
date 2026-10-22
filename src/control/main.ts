@@ -108,7 +108,8 @@ function showGuide(pack: PackViewError): void {
 
       item.append(order, code)
 
-      if (index === 0) {
+      const recommended = pack.recommendedPath ?? pack.searchedPaths[0]
+      if (path === recommended) {
         const tag = document.createElement('span')
         tag.className = 'path-tag'
         tag.textContent = '推荐'
