@@ -1,0 +1,10 @@
+{
+  "book": "black_book_1218",
+  "name": "赞美诗歌（1218首）",
+  "alias": "千首本/黑皮",
+  "count": 2,
+  "items": [
+    { "book": "black_book_1218", "number": 1, "title": "圣哉三一", "verses": [], "source": "fixture" },
+    { "book": "black_book_1218", "number": 2, "title": "神是我拯救", "verses": [], "source": "fixture" }
+  ]
+}

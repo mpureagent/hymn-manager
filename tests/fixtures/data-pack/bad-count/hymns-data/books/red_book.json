@@ -1,0 +1,9 @@
+{
+  "book": "red_book",
+  "name": "赞美诗（新编）",
+  "alias": "红本",
+  "count": 1,
+  "items": [
+    { "book": "red_book", "number": 1, "title": "圣哉三一歌", "verses": [], "source": "fixture" }
+  ]
+}
