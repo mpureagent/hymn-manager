@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { dirname, join } from 'node:path'
+import type { OpenedInput } from '../shared/history'
 import { IPC, type Bootstrap, type PackView } from '../shared/ipc'
 import { dataPackSearchPaths, loadDataPack, type DataPackResult } from './data-pack'
 import { SettingsStore, type WindowBounds } from './settings'
+import { HistoryStore } from './store'
 
 const MIN_WIDTH = 1024
 const MIN_HEIGHT = 640
@@ -10,6 +12,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL
 
 let control: BrowserWindow | null = null
 let settings: SettingsStore
+let history: HistoryStore
 let searchPaths: string[] = []
 let packResult: DataPackResult = { ok: false, reason: 'missing', searchedPaths: [] }
 
@@ -28,6 +31,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   settings = new SettingsStore(app.getPath('userData'))
+  history = new HistoryStore(app.getPath('userData'))
   searchPaths = computeSearchPaths()
   packResult = resolvePack()
   registerIpc()
@@ -107,6 +111,36 @@ function registerIpc(): void {
     }
     return { currentBook: settings.get().currentBook }
   })
+
+  ipcMain.handle(IPC.historyGet, () => history.get())
+
+  ipcMain.handle(IPC.historyAddSearch, (_event, q: unknown) => {
+    if (typeof q !== 'string') return history.get()
+    return history.addSearch(q)
+  })
+
+  ipcMain.handle(IPC.historyAddOpened, (_event, raw: unknown) => {
+    const entry = parseOpenedInput(raw)
+    if (!entry) return history.get()
+
+    const book = packResult.ok
+      ? packResult.books.find((candidate) => candidate.id === entry.book)
+      : undefined
+    const item = book?.items.find((candidate) => candidate.number === entry.number)
+    if (!book || !item) return history.get()
+
+    return history.addOpened({ book: book.id, number: item.number, title: item.title })
+  })
+
+  ipcMain.handle(IPC.historyClear, () => history.clear())
+}
+
+function parseOpenedInput(raw: unknown): OpenedInput | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const { book, number, title } = raw as Record<string, unknown>
+  if (typeof book !== 'string' || book === '') return null
+  if (!Number.isInteger(number) || (number as number) < 0) return null
+  return { book, number: number as number, title: typeof title === 'string' ? title : '' }
 }
 
 function createControlWindow(): BrowserWindow {

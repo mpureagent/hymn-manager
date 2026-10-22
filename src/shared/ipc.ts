@@ -1,9 +1,14 @@
+import type { HistoryData, OpenedInput } from './history'
 import type { PackBook } from './types'
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
   recheck: 'app:recheck',
   setCurrentBook: 'app:set-current-book',
+  historyGet: 'history:get',
+  historyAddSearch: 'history:add-search',
+  historyAddOpened: 'history:add-opened',
+  historyClear: 'history:clear',
 } as const
 
 export interface PackViewOk {
@@ -32,4 +37,8 @@ export interface HymnApi {
   bootstrap(): Promise<Bootstrap>
   recheck(): Promise<Bootstrap>
   setCurrentBook(id: string): Promise<{ currentBook: string | null }>
+  getHistory(): Promise<HistoryData>
+  addSearch(q: string): Promise<HistoryData>
+  addOpened(entry: OpenedInput): Promise<HistoryData>
+  clearHistory(): Promise<HistoryData>
 }
