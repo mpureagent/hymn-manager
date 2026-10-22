@@ -8,8 +8,9 @@ build/
 # 数据不入库（版权）：脚本进仓库，数据本地生成
 .raw/
 data/
-# 生成的数据包不进版本库（只忽略仓库根目录，测试 fixture 仍入库）
+# 生成的数据包与交付物不进版本库（只忽略仓库根目录，测试 fixture 仍入库）
 /hymns-data/
+/delivery/
 
 # Python 缓存
 __pycache__/

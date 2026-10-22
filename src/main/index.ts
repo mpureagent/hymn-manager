@@ -59,7 +59,8 @@ function start(): void {
 
 function computeSearchPaths(): string[] {
   return dataPackSearchPaths({
-    exeDir: dirname(app.getPath('exe')),
+    // portable 目标会把程序解压到临时目录运行，此时 exe 同目录不是用户放数据包的位置。
+    exeDir: process.env.PORTABLE_EXECUTABLE_DIR ?? dirname(app.getPath('exe')),
     userDataDir: app.getPath('userData'),
     cwd: process.cwd(),
     includeDev: !app.isPackaged,

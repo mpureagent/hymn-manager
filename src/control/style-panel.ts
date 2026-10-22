@@ -324,7 +324,7 @@ export class StylePanel {
     label.textContent = '实时样张'
     const text = document.createElement('p')
     text.className = 'style-sample-text'
-    text.textContent = '圣哉，圣哉，圣哉！'
+    text.textContent = '样式预览文字'
     box.append(label, text)
     return box
   }
