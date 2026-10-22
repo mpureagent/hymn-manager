@@ -1,5 +1,5 @@
 import type { HymnApi, PackViewError, PackViewOk } from '../shared/ipc'
-import type { PackBook } from '../shared/types'
+import type { PackBook, HymnItem } from '../shared/types'
 import { buildCatalog, formatBookLabel } from '../shared/catalog'
 import { createEffectiveSearchRecorder } from '../shared/effective-search'
 import {
@@ -10,6 +10,7 @@ import {
   type OpenEntry,
 } from '../shared/history'
 import { normalizeQuery } from '../shared/normalize'
+import type { ProjectionContent } from '../shared/projection'
 import { search } from '../shared/search'
 import {
   DEFAULT_STYLE,
@@ -42,6 +43,8 @@ const guideRetry = el<HTMLButtonElement>('guide-retry')
 const bookSelect = el<HTMLSelectElement>('book-select')
 const searchInput = el<HTMLInputElement>('search-input')
 const styleButton = el<HTMLButtonElement>('btn-style')
+const projectButton = el<HTMLButtonElement>('btn-project')
+const toast = el<HTMLElement>('toast')
 const listHeading = el<HTMLElement>('list-heading')
 const catalogCount = el<HTMLElement>('catalog-count')
 const listEmpty = el<HTMLElement>('list-empty')
@@ -68,6 +71,9 @@ let confirmingClear = false
 let clearConfirmTimer: number | null = null
 let currentStyle: HymnStyle = { ...DEFAULT_STYLE }
 let stylePersistTimer: number | null = null
+let currentItem: HymnItem | null = null
+let projectionActive = false
+let toastTimer: number | null = null
 
 const searchRecorder = createEffectiveSearchRecorder((query) => {
   void persistSearch(query)
@@ -98,6 +104,7 @@ const list = new ListView(el<HTMLElement>('hymn-list'), {
 
 function showPreview(entry: ListEntry): void {
   const item = current?.items.find((candidate) => candidate.number === entry.number)
+  currentItem = item ?? null
   if (item) lyrics.show(item)
 }
 
@@ -110,10 +117,12 @@ function openFromList(entry: ListEntry): void {
     searchRecorder.commit(searchInput.value, appliedSearch.count)
   }
   showPreview(entry)
+  pushProjection()
   void persistOpened(entry.number, entry.title)
 }
 
 function resetPreview(): void {
+  currentItem = null
   lyrics.clear()
 }
 
@@ -225,6 +234,7 @@ function changeStyle(patch: Partial<HymnStyle>): HymnStyle {
   currentStyle = clampStyle({ ...currentStyle, ...patch })
   applyStyle(currentStyle)
   scheduleStylePersist(currentStyle)
+  pushProjectionStyle()
   return currentStyle
 }
 
@@ -251,6 +261,81 @@ function flushStylePersistence(): void {
   window.clearTimeout(stylePersistTimer)
   stylePersistTimer = null
   void persistStyle(currentStyle)
+}
+
+function currentProjectionContent(): ProjectionContent | null {
+  if (!current || !currentItem) return null
+  return {
+    book: current.id,
+    number: currentItem.number,
+    title: currentItem.title,
+    verses: currentItem.verses ?? [],
+    style: currentStyle,
+  }
+}
+
+function pushProjection(): void {
+  if (!api || !projectionActive) return
+  const content = currentProjectionContent()
+  if (content) api.updateProjection(content)
+}
+
+function pushProjectionStyle(): void {
+  if (!api || !projectionActive) return
+  api.setProjectionStyle(currentStyle)
+}
+
+function setProjectionActive(active: boolean): void {
+  projectionActive = active
+  projectButton.textContent = active ? '投屏中' : '投屏'
+  projectButton.classList.toggle('active', active)
+  projectButton.setAttribute('aria-pressed', String(active))
+  projectButton.title = active ? '关闭投屏（F5 / Ctrl+P）' : '投屏当前诗歌（F5 / Ctrl+P）'
+}
+
+async function toggleProjection(): Promise<void> {
+  if (!api || app.hidden || projectButton.disabled) return
+  try {
+    const result = await api.toggleProjection(currentProjectionContent())
+    if (result.needSelection) {
+      showToast('请先选择一首诗')
+      return
+    }
+    if (result.hint) showToast(result.hint)
+    setProjectionActive(result.active)
+  } catch (error) {
+    console.warn('[projection] 切换投屏失败', error)
+    showToast('投屏窗口打开失败')
+  }
+}
+
+/** 投屏窗口里「上一首/下一首」由主进程改内容，这里让主窗口预览跟随。 */
+function followProjection(content: ProjectionContent): void {
+  const book = books.find((candidate) => candidate.id === content.book)
+  if (!book) return
+  const item = book.items.find((candidate) => candidate.number === content.number)
+  if (!item) return
+
+  if (!current || current.id !== book.id) selectBook(book, true)
+  revealNumber(item.number)
+  lyrics.show(item)
+  currentItem = item
+}
+
+function showToast(message: string): void {
+  toast.textContent = message
+  toast.hidden = false
+  if (toastTimer !== null) window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toastTimer = null
+    toast.hidden = true
+  }, 2800)
+}
+
+function bindProjectionEvents(): void {
+  if (!api) return
+  api.onProjectionState((state) => setProjectionActive(state.active))
+  api.onProjectionChanged((content) => followProjection(content))
 }
 
 async function loadFonts(): Promise<void> {
@@ -288,6 +373,8 @@ function openHistory(entry: OpenEntry): void {
 
   revealNumber(item.number)
   lyrics.show(item)
+  currentItem = item
+  pushProjection()
   void persistOpened(item.number, item.title)
 }
 
@@ -408,6 +495,7 @@ function showApp(pack: PackViewOk, currentBookId: string | null): void {
   searchInput.disabled = false
   bookSelect.disabled = false
   styleButton.disabled = false
+  projectButton.disabled = false
 
   books = pack.books
   bookSelect.replaceChildren(
@@ -444,6 +532,7 @@ function showGuide(pack: PackViewError): void {
   searchInput.disabled = true
   bookSelect.disabled = true
   styleButton.disabled = true
+  projectButton.disabled = true
 
   const missing = pack.reason === 'missing'
   guideTitle.textContent = missing ? '未找到数据包' : '数据包无法读取'
@@ -509,6 +598,10 @@ styleButton.addEventListener('click', () => {
   stylePanel.open()
 })
 
+projectButton.addEventListener('click', () => {
+  void toggleProjection()
+})
+
 searchInput.addEventListener('compositionstart', () => {
   composing = true
   cancelScheduledSearch()
@@ -567,6 +660,15 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault()
     searchInput.focus()
     searchInput.select()
+    return
+  }
+
+  if (
+    !app.hidden &&
+    (event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p'))
+  ) {
+    event.preventDefault()
+    void toggleProjection()
     return
   }
 
@@ -663,6 +765,7 @@ async function init(): Promise<void> {
     })
     return
   }
+  bindProjectionEvents()
   try {
     applyBootstrap(await api.bootstrap())
   } catch (error) {
