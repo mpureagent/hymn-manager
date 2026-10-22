@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>赞美诗歌本</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f1e9;
+        --surface: #fffdf8;
+        --surface-soft: #faf7f0;
+        --ink: #24211c;
+        --muted: #6f675b;
+        --faint: #9a9183;
+        --line: #ddd5c6;
+        --line-soft: #eee7da;
+        --accent: #7d3b2f;
+        --accent-soft: #f0e3d8;
+        --focus: #7d3b2f;
+        --row-height: 44px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+          "Noto Sans CJK SC", system-ui, sans-serif;
+        font-size: 14px;
+      }
+
+      /* 顶部栏：选本 → 搜索 → 样式 → 投屏，四个独立控件 */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px;
+        background: var(--surface-soft);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .book-select,
+      .search-input,
+      .tool-btn {
+        height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .book-select {
+        flex: 0 0 auto;
+        width: 260px;
+        padding: 0 34px 0 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .search-input {
+        flex: 1 1 auto;
+        min-width: 180px;
+        max-width: 560px;
+        padding: 0 14px;
+        outline: none;
+      }
+
+      .search-input::placeholder {
+        color: var(--faint);
+      }
+
+      .book-select:focus-visible,
+      .search-input:focus {
+        outline: 2px solid var(--focus);
+        outline-offset: -1px;
+      }
+
+      .spacer {
+        flex: 1 1 auto;
+      }
+
+      .tool-btn {
+        flex: 0 0 auto;
+        min-width: 72px;
+        padding: 0 16px;
+        cursor: pointer;
+      }
+
+      .tool-btn:hover:not(:disabled) {
+        background: var(--accent-soft);
+      }
+
+      .tool-btn:disabled {
+        color: var(--faint);
+        cursor: not-allowed;
+        background: #f2eee5;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .list-pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--line);
+      }
+
+      .pane-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--line-soft);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .pane-head strong {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--ink);
+      }
+
+      .list-viewport {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        outline: none;
+        overscroll-behavior: contain;
+      }
+
+      .vl-spacer {
+        width: 1px;
+        pointer-events: none;
+      }
+
+      .vl-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+      }
+
+      .hymn-row {
+        position: absolute;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 0 18px;
+        border: 0;
+        border-bottom: 1px solid var(--line-soft);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .hymn-row:hover {
+        background: #f7f2e8;
+      }
+
+      .hymn-row:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+
+      .hymn-row.selected {
+        background: var(--accent-soft);
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+
+      .hymn-row-num {
+        flex: 0 0 76px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .hymn-row-title {
+        flex: 1 1 auto;
+        overflow: hidden;
+        font-size: 15px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preview-pane {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        padding: 48px;
+        background:
+          radial-gradient(circle at 50% 38%, #fbf8f1 0, var(--bg) 62%);
+      }
+
+      .preview-empty,
+      .preview-selected {
+        max-width: 520px;
+        text-align: center;
+      }
+
+      .preview-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 54px;
+        height: 54px;
+        margin-bottom: 18px;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--surface);
+        color: var(--accent);
+        font-family: Georgia, serif;
+        font-size: 26px;
+      }
+
+      .preview-empty p,
+      .preview-selected p {
+        margin: 0;
+      }
+
+      .preview-empty-title {
+        font-size: 17px;
+        letter-spacing: 0.12em;
+      }
+
+      .preview-hint {
+        margin-top: 10px !important;
+        color: var(--faint);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .preview-eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+      }
+
+      .preview-title {
+        margin: 14px 0 0;
+        font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+      }
+
+      /* 数据包引导页 */
+      .guide {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
+        padding: 40px;
+        overflow-y: auto;
+      }
+
+      .guide-card {
+        width: min(720px, 100%);
+        padding: 34px 38px 32px;
+        border: 1px solid var(--line);
+        border-top: 4px solid var(--accent);
+        border-radius: 10px;
+        background: var(--surface);
+        box-shadow: 0 18px 48px rgba(69, 56, 40, 0.08);
+      }
+
+      .guide-eyebrow {
+        margin: 0 0 10px;
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+      }
+
+      .guide-card h1 {
+        margin: 0;
+        font-family: "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+        font-size: 25px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+
+      .guide-desc {
+        margin: 12px 0 0;
+        color: var(--muted);
+        line-height: 1.8;
+      }
+
+      .guide-subhead {
+        margin: 26px 0 8px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .guide-paths {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        border: 1px solid var(--line-soft);
+        border-radius: 7px;
+        overflow: hidden;
+      }
+
+      .guide-paths li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 13px;
+        background: var(--surface-soft);
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .guide-paths li:last-child {
+        border-bottom: 0;
+      }
+
+      .path-index {
+        flex: 0 0 20px;
+        color: var(--faint);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .guide-paths code {
+        flex: 1 1 auto;
+        overflow-wrap: anywhere;
+        color: var(--ink);
+        font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+        font-size: 12.5px;
+        user-select: text;
+      }
+
+      .path-tag {
+        flex: 0 0 auto;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 11px;
+      }
+
+      .guide-error {
+        margin: 16px 0 0;
+        padding: 11px 13px;
+        border: 1px solid #e6c9bd;
+        border-radius: 7px;
+        background: #fbf0ea;
+        color: #6d2d21;
+        font-size: 12.5px;
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+
+      .guide-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .primary-btn {
+        height: 40px;
+        padding: 0 22px;
+        border: 1px solid var(--accent);
+        border-radius: 7px;
+        background: var(--accent);
+        color: #fffaf3;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .primary-btn:hover:not(:disabled) {
+        background: #6a3026;
+      }
+
+      .primary-btn:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+
+      .guide-note {
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .preview-pane {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <select id="book-select" class="book-select" aria-label="选择诗歌本"></select>
+      <input
+        id="search-input"
+        class="search-input"
+        type="search"
+        placeholder="输入编号或歌名"
+        aria-label="输入编号或歌名"
+        autocomplete="off"
+        spellcheck="false"
+        disabled
+      />
+      <div class="spacer"></div>
+      <button id="btn-style" class="tool-btn" type="button" disabled title="样式设置（后续版本）">样式</button>
+      <button id="btn-project" class="tool-btn" type="button" disabled title="投屏（后续版本）">投屏</button>
+    </header>
+
+    <main id="app" class="layout" hidden>
+      <section class="list-pane">
+        <div class="pane-head">
+          <strong>全目录</strong>
+          <span id="catalog-count"></span>
+        </div>
+        <div id="hymn-list" class="list-viewport" role="listbox" aria-label="诗歌目录"></div>
+      </section>
+      <section class="preview-pane">
+        <div id="preview-empty" class="preview-empty">
+          <div class="preview-mark" aria-hidden="true">♪</div>
+          <p class="preview-empty-title">选择左侧诗歌</p>
+          <p class="preview-hint">歌词与曲谱将在后续版本显示</p>
+        </div>
+        <div id="preview-selected" class="preview-selected" hidden>
+          <p id="preview-eyebrow" class="preview-eyebrow"></p>
+          <h2 id="preview-title" class="preview-title"></h2>
+          <p class="preview-hint">歌词预览将在后续版本显示</p>
+        </div>
+      </section>
+    </main>
+
+    <section id="guide" class="guide" hidden>
+      <div class="guide-card">
+        <p class="guide-eyebrow">数据包 · HYMNS-DATA</p>
+        <h1 id="guide-title">未找到数据包</h1>
+        <p id="guide-desc" class="guide-desc"></p>
+        <p class="guide-subhead">请把 hymns-data 文件夹放到以下任一位置（推荐第一个）：</p>
+        <ol id="guide-paths" class="guide-paths"></ol>
+        <p id="guide-error" class="guide-error" hidden></p>
+        <div class="guide-actions">
+          <button id="guide-retry" class="primary-btn" type="button">重新检测</button>
+          <span class="guide-note">数据包与程序分离，应用本身不内置诗歌数据。</span>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

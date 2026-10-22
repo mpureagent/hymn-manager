@@ -1,0 +1,155 @@
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
+import { dirname, join } from 'node:path'
+import { IPC, type Bootstrap, type PackView } from '../shared/ipc'
+import { dataPackSearchPaths, loadDataPack, type DataPackResult } from './data-pack'
+import { SettingsStore, type WindowBounds } from './settings'
+
+const MIN_WIDTH = 1024
+const MIN_HEIGHT = 640
+const DEV_URL = process.env.VITE_DEV_SERVER_URL
+
+let control: BrowserWindow | null = null
+let settings: SettingsStore
+let searchPaths: string[] = []
+let packResult: DataPackResult = { ok: false, reason: 'missing', searchedPaths: [] }
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!control || control.isDestroyed()) return
+    if (control.isMinimized()) control.restore()
+    control.focus()
+  })
+
+  void app.whenReady().then(() => start())
+  app.on('window-all-closed', () => app.quit())
+}
+
+function start(): void {
+  settings = new SettingsStore(app.getPath('userData'))
+  searchPaths = computeSearchPaths()
+  packResult = resolvePack()
+  registerIpc()
+  control = createControlWindow()
+  control.on('closed', () => {
+    control = null
+  })
+}
+
+function computeSearchPaths(): string[] {
+  return dataPackSearchPaths({
+    exeDir: dirname(app.getPath('exe')),
+    userDataDir: app.getPath('userData'),
+    cwd: process.cwd(),
+    includeDev: !app.isPackaged,
+  })
+}
+
+function resolvePack(): DataPackResult {
+  try {
+    return loadDataPack(searchPaths)
+  } catch (error) {
+    return {
+      ok: false,
+      reason: 'corrupt',
+      searchedPaths: searchPaths,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function toPackView(result: DataPackResult): PackView {
+  if (result.ok) return { ok: true, root: result.root, books: result.books }
+  if (result.reason === 'corrupt') {
+    return { ok: false, reason: 'corrupt', searchedPaths: result.searchedPaths, error: result.error }
+  }
+  return { ok: false, reason: 'missing', searchedPaths: result.searchedPaths }
+}
+
+function currentBookFor(result: DataPackResult): string | null {
+  if (!result.ok) return null
+  const saved = settings.get().currentBook
+  if (saved && result.books.some((book) => book.id === saved)) return saved
+  return result.books[0]?.id ?? null
+}
+
+function bootstrap(): Bootstrap {
+  return { pack: toPackView(packResult), currentBook: currentBookFor(packResult) }
+}
+
+function registerIpc(): void {
+  ipcMain.handle(IPC.bootstrap, () => bootstrap())
+
+  ipcMain.handle(IPC.recheck, () => {
+    searchPaths = computeSearchPaths()
+    packResult = resolvePack()
+    return bootstrap()
+  })
+
+  ipcMain.handle(IPC.setCurrentBook, (_event, id: unknown) => {
+    if (
+      typeof id === 'string' &&
+      packResult.ok &&
+      packResult.books.some((book) => book.id === id)
+    ) {
+      settings.patch({ currentBook: id })
+      return { currentBook: id }
+    }
+    return { currentBook: settings.get().currentBook }
+  })
+}
+
+function createControlWindow(): BrowserWindow {
+  const saved = restoreBounds(settings.get().windowBounds)
+  const win = new BrowserWindow({
+    width: saved?.width ?? 1180,
+    height: saved?.height ?? 760,
+    ...(saved ? { x: saved.x, y: saved.y } : {}),
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
+    title: '赞美诗歌本',
+    backgroundColor: '#f4f1e9',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) win.show()
+  })
+
+  win.on('close', () => {
+    settings.patch({ windowBounds: normalBounds(win) })
+  })
+
+  if (DEV_URL) {
+    void win.loadURL(DEV_URL)
+  } else {
+    void win.loadFile(join(__dirname, '..', 'renderer', 'control', 'index.html'))
+  }
+
+  return win
+}
+
+function normalBounds(win: BrowserWindow): WindowBounds {
+  const bounds = win.isMaximized() || win.isFullScreen() ? win.getNormalBounds() : win.getBounds()
+  return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+}
+
+function restoreBounds(saved: WindowBounds | undefined): WindowBounds | undefined {
+  if (!saved) return undefined
+  const width = Math.max(MIN_WIDTH, Math.round(saved.width))
+  const height = Math.max(MIN_HEIGHT, Math.round(saved.height))
+  const x = Math.round(saved.x)
+  const y = Math.round(saved.y)
+  const visible = screen.getAllDisplays().some((display) => {
+    const area = display.workArea
+    return x < area.x + area.width && x + width > area.x && y < area.y + area.height && y + height > area.y
+  })
+  return visible ? { x, y, width, height } : { x: saved.x, y: saved.y, width, height }
+}

@@ -1,0 +1,73 @@
+{
+  "name": "hymn-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "赞美诗歌本：离线选本、检索、阅读与投屏（Electron 22）",
+  "main": "dist/main/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "inject:csp": "node scripts/inject-csp.mjs",
+    "build": "npm run build:main && npm run build:renderer && npm run inject:csp && npm run typecheck",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "dev": "npm run build:main && node scripts/dev.mjs",
+    "start": "npm run build && node scripts/start.mjs",
+    "pack:win": "npm run build && electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "org.hymnmanager.desktop",
+    "productName": "赞美诗歌本",
+    "executableName": "HymnManager",
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "files": [
+      "dist/main/**/*",
+      "dist/renderer/**/*",
+      "dist/shared/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "赞美诗歌本"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "16.18.126",
+    "electron": "22.3.27",
+    "electron-builder": "26.15.3",
+    "typescript": "5.6.3",
+    "vite": "5.4.20",
+    "vitest": "2.1.9"
+  },
+  "overrides": {
+    "@types/node": "16.18.126"
+  }
+}
