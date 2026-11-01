@@ -16,3 +16,6 @@ data/
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 本地运行缓存（Web 端隧道地址、日志、userData）
+/.cache/
