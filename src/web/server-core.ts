@@ -1,6 +1,7 @@
 import { createReadStream, statSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
+import { gzipSync } from 'node:zlib'
 import { dataPackSearchPaths, loadDataPack, type DataPackResult } from '../main/data-pack'
 import { listChineseFonts } from '../main/fonts'
 import { resolveScorePath } from '../main/scores'
@@ -12,6 +13,8 @@ import { clampStyle } from '../shared/style'
 const DEFAULT_PORT = 8787
 const DEFAULT_HOST = '127.0.0.1'
 const MAX_BODY_BYTES = 1024 * 1024
+/** 小于此体积的 JSON 不做 gzip，避免小响应的压缩开销。 */
+const GZIP_MIN_BYTES = 1024
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -384,13 +387,30 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     res.end()
     return
   }
-  const data = JSON.stringify(body)
+  const json = JSON.stringify(body)
+  const raw = Buffer.from(json, 'utf8')
+  // bootstrap 携带两个诗歌本全量条目（约 1.4MB），不压缩时手机经隧道加载明显慢。
+  // 只压缩足够大的响应，小响应压了反而多耗 CPU。
+  const acceptHeader = res.req?.headers['accept-encoding']
+  const accept = Array.isArray(acceptHeader) ? acceptHeader.join(',') : (acceptHeader ?? '')
+  if (raw.length >= GZIP_MIN_BYTES && /\bgzip\b/.test(accept)) {
+    const gzipped = gzipSync(raw)
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': gzipped.length,
+      'content-encoding': 'gzip',
+      vary: 'accept-encoding',
+      'cache-control': 'no-store',
+    })
+    res.end(gzipped)
+    return
+  }
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(data),
+    'content-length': raw.length,
     'cache-control': 'no-store',
   })
-  res.end(data)
+  res.end(raw)
 }
 
 function notFound(res: ServerResponse): void {
