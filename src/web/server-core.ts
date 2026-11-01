@@ -256,7 +256,10 @@ export function createHymnServer(config: WebServerConfig): WebServerHandle {
       return firstFile([join(staticDir, 'index.html'), join(staticDir, 'control', 'index.html')])
     }
     if (pathname === '/projection' || pathname === '/projection/') {
-      return firstFile([join(staticDir, 'projection', 'index.html')])
+      return firstFile([
+        join(staticDir, 'projection.html'),
+        join(staticDir, 'projection', 'index.html'),
+      ])
     }
 
     const relative = pathname.replace(/^\/+/, '')
