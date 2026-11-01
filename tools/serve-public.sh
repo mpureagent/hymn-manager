@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# 启动 Web 端并对外暴露（SSH 反向隧道，无需开放安全组端口）。
+# 启动 Web 端并对外暴露（隧道，无需开放安全组端口）。
 #
-# 用法：
-#   tools/serve-public.sh [本地端口]
-# 说明：
-#   - 本机公网只开了 22，8080/80/443 等入站端口都被安全组挡住，
-#     因此用 serveo.net 的 SSH 反向隧道把本地端口映射成公网 HTTPS 地址。
-#   - 隧道地址每次重连都会变；脚本会把地址打到 stdout 并存到 .cache/web-url.txt。
+# 用法：tools/serve-public.sh [本地端口]
+#
+# 为什么需要隧道：本机公网只开放 22，80/443/8080 等入站端口都被安全组挡住，
+# 已用 check-host.net 多节点验证全部超时。
+#
+# 隧道选型（都实测过）：
+#   - cloudflared: 无中间页、加载最快（首页 1.7s / 列表 3.1s），首选
+#   - serveo:      有「Browser Warning」点击页，且未压缩响应会被截断
+#   - pinggy:      有「Enter site」点击页，免费版 60 分钟过期
 set -uo pipefail
 
 PORT="${1:-8787}"
@@ -16,6 +19,7 @@ mkdir -p "$CACHE"
 
 # 1) 清掉可能残留的旧进程（只杀本项目端口的服务与隧道）
 pkill -f "src/web/server.mjs" 2>/dev/null || true
+pkill -f "cloudflared tunnel" 2>/dev/null || true
 pkill -f "serveo.net" 2>/dev/null || true
 sleep 1
 
@@ -43,16 +47,25 @@ if ! curl -sf -o /dev/null "http://127.0.0.1:$PORT/"; then
 fi
 echo "[serve-public] 本地服务已就绪：http://127.0.0.1:$PORT"
 
-# 3) 建隧道
-nohup ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-  -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes \
-  -R "80:localhost:$PORT" serveo.net >"$CACHE/tunnel.log" 2>&1 &
+# 3) 建隧道（优先 cloudflared：无中间页）
+if ! command -v cloudflared >/dev/null 2>&1; then
+  echo "[serve-public] 未安装 cloudflared，回退到 serveo（有中间页）" >&2
+  nohup ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes \
+    -R "80:localhost:$PORT" serveo.net >"$CACHE/tunnel.log" 2>&1 &
+  PATTERN='https://[a-z0-9-]+\.serveousercontent\.com'
+else
+  # --protocol http2：本机所在区域 QUIC 节点不通，http2 实测稳定
+  nohup cloudflared tunnel --url "http://127.0.0.1:$PORT" \
+    --no-autoupdate --protocol http2 >"$CACHE/tunnel.log" 2>&1 &
+  PATTERN='https://[a-z0-9-]+\.trycloudflare\.com'
+fi
 
 URL=""
-for _ in $(seq 1 40); do
-  URL="$(grep -oE 'https://[a-z0-9-]+\.serveousercontent\.com' "$CACHE/tunnel.log" 2>/dev/null | head -1)"
+for _ in $(seq 1 60); do
+  URL="$(grep -oE "$PATTERN" "$CACHE/tunnel.log" 2>/dev/null | head -1)"
   [ -n "$URL" ] && break
-  sleep 0.5
+  sleep 1
 done
 
 if [ -z "$URL" ]; then
