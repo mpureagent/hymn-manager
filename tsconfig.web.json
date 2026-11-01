@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.main.json",
+  "compilerOptions": {
+    "outDir": "dist/web-core",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/web/**/*.ts",
+    "src/main/data-pack.ts",
+    "src/main/store.ts",
+    "src/main/settings.ts",
+    "src/main/scores.ts",
+    "src/main/fonts.ts",
+    "src/shared/**/*.ts"
+  ]
+}

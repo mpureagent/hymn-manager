@@ -26,8 +26,9 @@ export function scoreRelativePath(
   return `scores/${book}/${String(number).padStart(4, '0')}_${page}.${extension}`
 }
 
-/** 绝对路径 → 可由 <img src> 加载的 file:// URL（Windows/POSIX 均适用）。 */
+/** 绝对路径 → 可由 <img src> 加载的 file:// URL（Windows/POSIX 均适用）；已是 http(s) URL 时原样返回。 */
 export function filePathToUrl(filePath: string): string {
+  if (/^https?:\/\//i.test(filePath)) return filePath
   let normalized = filePath.replace(/\\/g, '/')
   if (/^[A-Za-z]:\//.test(normalized)) normalized = `/${normalized}`
   if (!normalized.startsWith('/')) normalized = `/${normalized}`
