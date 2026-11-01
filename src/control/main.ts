@@ -495,8 +495,10 @@ function renderOpenedEntry(entry: OpenEntry, now: Date): HTMLLIElement {
   const meta = document.createElement('span')
   meta.className = 'history-item-meta'
   const relative = formatRelativeTime(entry.at, now)
-  meta.textContent =
-    entry.book === current?.id ? relative : `${bookShortLabel(entry.book)} · ${relative}`
+  // 编号只在各自本内唯一：红本第1首与千首本第1首是两首不同的诗，
+  // 因此来源必须始终显示，不能因「就是当前本」而省略，否则两条同名记录无法区分。
+  meta.textContent = `${bookShortLabel(entry.book)} · ${relative}`
+  meta.dataset.book = entry.book
 
   main.append(title, meta)
   button.append(number, main)
