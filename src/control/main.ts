@@ -63,6 +63,11 @@ const tabLyrics = el<HTMLButtonElement>('tab-lyrics')
 const tabScore = el<HTMLButtonElement>('tab-score')
 const lyricsView = el<HTMLElement>('lyrics-view')
 const scorePanel = el<HTMLElement>('score-view')
+const listPane = el<HTMLElement>('list-pane')
+const previewPane = el<HTMLElement>('preview-pane')
+const listViewport = el<HTMLElement>('hymn-list')
+const backButton = el<HTMLButtonElement>('btn-back')
+const topbarTitle = el<HTMLElement>('topbar-title')
 
 let books: PackBook[] = []
 let current: PackBook | null = null
@@ -80,6 +85,9 @@ let currentItem: HymnItem | null = null
 let previewView: ProjectionView = 'lyrics'
 let projectionActive = false
 let toastTimer: number | null = null
+let narrowView: 'list' | 'detail' = 'list'
+let narrowListScrollTop = 0
+const narrowMedia = window.matchMedia('(max-width: 900px)')
 
 const searchRecorder = createEffectiveSearchRecorder((query) => {
   void persistSearch(query)
@@ -128,12 +136,62 @@ const list = new ListView(el<HTMLElement>('hymn-list'), {
   onOpen: (entry) => openFromList(entry),
 })
 
+function isNarrowScreen(): boolean {
+  return narrowMedia.matches
+}
+
+/** 窄屏同一时刻只显示一个 pane；宽屏两栏都可见，视口控件保持原样。 */
+function renderChrome(): void {
+  const detail = isNarrowScreen() && narrowView === 'detail'
+  listPane.hidden = detail
+  previewPane.hidden = isNarrowScreen() && !detail
+  backButton.hidden = !detail
+  topbarTitle.hidden = !detail
+  bookSelect.hidden = detail
+  searchInput.hidden = detail
+}
+
+function setTopbarTitle(item: HymnItem): void {
+  topbarTitle.textContent = `第${item.number}首 ${item.title}`
+  topbarTitle.title = topbarTitle.textContent
+}
+
+function enterNarrowDetail(): void {
+  if (!isNarrowScreen() || narrowView === 'detail' || !currentItem) return
+  narrowListScrollTop = listViewport.scrollTop
+  narrowView = 'detail'
+  renderChrome()
+}
+
+function backToNarrowList(): void {
+  if (!isNarrowScreen() || narrowView === 'list') return
+  narrowView = 'list'
+  renderChrome()
+
+  const number = currentItem?.number
+  window.requestAnimationFrame(() => {
+    listViewport.scrollTop = narrowListScrollTop
+    const index =
+      number === undefined
+        ? -1
+        : currentEntries.findIndex((entry) => entry.number === number)
+    if (index >= 0) {
+      list.selectIndex(index, true)
+    } else {
+      listViewport.focus()
+    }
+  })
+}
+
+narrowMedia.addEventListener('change', renderChrome)
+
 function showPreview(entry: ListEntry): void {
   const item = current?.items.find((candidate) => candidate.number === entry.number)
   currentItem = item ?? null
   if (item) {
     lyrics.show(item)
     score.setItem(item, current?.id ?? null)
+    setTopbarTitle(item)
   }
 }
 
@@ -146,6 +204,7 @@ function openFromList(entry: ListEntry): void {
     searchRecorder.commit(searchInput.value, appliedSearch.count)
   }
   showPreview(entry)
+  enterNarrowDetail()
   pushProjection()
   void persistOpened(entry.number, entry.title)
 }
@@ -367,6 +426,8 @@ function followProjection(content: ProjectionContent): void {
   lyrics.show(item)
   score.setItem(item, book.id)
   currentItem = item
+  setTopbarTitle(item)
+  enterNarrowDetail()
 }
 
 function showToast(message: string): void {
@@ -422,6 +483,8 @@ function openHistory(entry: OpenEntry): void {
   lyrics.show(item)
   score.setItem(item, book.id)
   currentItem = item
+  setTopbarTitle(item)
+  enterNarrowDetail()
   pushProjection()
   void persistOpened(item.number, item.title)
 }
@@ -652,6 +715,8 @@ projectButton.addEventListener('click', () => {
   void toggleProjection()
 })
 
+backButton.addEventListener('click', backToNarrowList)
+
 tabLyrics.addEventListener('click', () => setPreviewView('lyrics'))
 tabScore.addEventListener('click', () => setPreviewView('score'))
 
@@ -833,5 +898,6 @@ async function init(): Promise<void> {
   void loadFonts()
 }
 
+renderChrome()
 renderHistory()
 void init()
