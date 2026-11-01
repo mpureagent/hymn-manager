@@ -19,3 +19,7 @@ __pycache__/
 
 # 本地运行缓存（Web 端隧道地址、日志、userData）
 /.cache/
+
+# Web 入口 HTML 由 scripts/gen-web-html.mjs 从 index.html 派生，不进版本库
+src/control/web.html
+src/projection/web.html
